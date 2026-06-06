@@ -6,7 +6,9 @@
 
 **Architecture:** 로컬 Spark(local 모드) + Scala + sbt. 순수 함수형 변환 단위(Schema/TimeUtils/Dedup/Sessionizer/WauQueries)를 작게 분리하고, 부수효과(원자적 파티션 쓰기·검증 게이트·_SUCCESS)는 PartitionWriter로 격리. 세션화는 결정적 `session_id`(=user_id+세션시작시각) + backward-only 윈도우. Backfill 모드(전역 세션화 1회)로 과제 완수, Incremental(전날 lookback)은 설계로 대응.
 
-**Tech Stack:** Scala 2.13.14, Spark 4.1.2(브루 apache-spark와 정렬), sbt 1.12.x, ScalaTest 3.2.18, JDK 17(+add-opens), parquet+snappy, Hive(임베디드 Derby metastore) External Table.
+**Tech Stack:** Scala 2.13.17, Spark 4.1.2(브루 apache-spark와 정렬), sbt 1.12.x, ScalaTest 3.2.18, parquet+snappy, Hive(임베디드 Derby metastore) External Table.
+
+> **환경 확인됨(2026-06-07 설치 완료):** Spark 4.1.2 / Scala 2.13.17. `sbt test`는 JDK 17(`/usr/bin/java`), `spark-submit`은 brew가 가져온 JDK 21 런타임 사용 — 둘 다 Spark 4 지원, add-opens 필요(build.sbt + spark-submit extraJavaOptions에 반영됨).
 
 **설계 근거 문서:** `docs/superpowers/specs/2026-06-07-wau-activity-log-design.md` (결정 로그 9개 + 핵심 로직 명세).
 
@@ -91,7 +93,7 @@ addSbtPlugin("com.eed3si9n" % "sbt-assembly" % "2.2.0")
 - [ ] **Step 3: `build.sbt`**
 
 ```scala
-ThisBuild / scalaVersion := "2.13.14"
+ThisBuild / scalaVersion := "2.13.17"  // 설치된 brew spark의 Scala 버전과 일치
 ThisBuild / version      := "0.1.0"
 ThisBuild / organization := "com.activitylog"
 
