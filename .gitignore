@@ -1,0 +1,29 @@
+# === 데이터 (대용량 CSV 커밋 금지) ===
+data/
+*.csv
+
+# === Spark / Hive 로컬 산출물 ===
+metastore_db/
+spark-warehouse/
+derby.log
+output/
+_staging/
+**/_SUCCESS
+quarantine/
+
+# === sbt / Scala 빌드 ===
+target/
+project/target/
+project/project/
+.bsp/
+*.class
+
+# === IDE / OS ===
+.idea/
+.vscode/
+*.iml
+.DS_Store
+
+# === 로그 ===
+*.log
+logs/
