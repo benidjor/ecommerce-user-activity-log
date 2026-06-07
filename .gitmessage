@@ -1,0 +1,13 @@
+# <type>(<scope>): 제목 (50자 이하, 마침표 없음, 한국어)
+#
+# 본문: "왜" 중심, 72자 wrap, 한국어. 그 커밋이 해결한 이슈 5~15줄.
+#
+#
+# Refs:
+# Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+#
+# ── 참고 (docs/conventions/2026-06-07-commit-pr-convention.md) ───────────
+# type : feat fix chore docs refactor test perf ci build revert
+# scope: infra adapters ingest pipeline storage enrich dbt serve slo airflow env
+#        (docs 커밋은 spec/plan/convention 등 토픽 scope 허용)
+# 버전 : 실제 작업 모델 반영 (4.8 → 4.8, 과거 4.7 커밋은 4.7)
