@@ -18,6 +18,9 @@ project/project/
 .bsp/
 *.class
 
+# sbt JDK17 고정 (머신 종속 절대경로 — 로컬 전용, 커밋 금지)
+.sbtopts
+
 # === IDE / OS ===
 .idea/
 .vscode/
