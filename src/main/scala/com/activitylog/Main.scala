@@ -30,6 +30,9 @@ object Main {
     // arg(...).getOrElse("backfill"): Option이 Some이면 내부 값, None이면 기본값 반환.
     //   Python: arg(args, "--mode") or "backfill" 와 동일한 동작.
     val mode    = arg(args, "--mode").getOrElse("backfill")
+    // --mode 오타 방지: 허용값이 아니면 즉시 중단(조용히 backfill로 빠지는 것 방지).
+    //   require(조건, 메시지): 조건이 false면 IllegalArgumentException(Python의 assert와 유사).
+    require(Set("backfill", "incremental").contains(mode), s"invalid --mode: $mode (backfill|incremental)")
 
     // sys.error("메시지"): JVM을 즉시 RuntimeException으로 종료(Python의 raise RuntimeError("...")).
     //   getOrElse(sys.error(...)): --input이 없으면 에러를 던지는 "필수 인자 검증" 패턴.
@@ -56,56 +59,60 @@ object Main {
     //   Python의 try/finally와 완전히 동일한 구조.
     //   여기서는 파이프라인이 실패해도 spark.stop()으로 세션을 정상 종료하기 위해 사용.
     try {
-      // 입력 CSV를 먼저 raw 스키마로 읽어 전체 행 수를 계산 → validate의 기준값(inputCount).
-      //   Schema.Raw: 명시적 스키마(타입 추론 없음, 설계 결정 5 보조).
-      //   .count(): Action — 실제로 CSV를 읽어 행 수를 반환(lazy evaluation 종료 시점).
-      val inputCount = spark.read.option("header","true").schema(Schema.Raw).csv(inputs: _*).count()
+      // raw CSV를 명시적 스키마로 1회 정의(이후 count·transform이 이 lineage를 공유).
+      //   Schema.Raw: 타입 추론 없이 명시 스키마 강제(설계 결정 5 보조).
+      val raw = spark.read.option("header", "true").schema(Schema.Raw).csv(inputs: _*)
 
-      // ActivityPipeline.readAndTransform: CSV 읽기 → dedup → KST 변환 → 세션화 전 과정.
+      // rawCount: 전역 sanity("행 폭증 방지")의 기준값. dedup/세션화는 행을 늘리지 않는다.
+      //   .count(): Action — 실제 스캔 1회.
+      val rawCount = raw.count()
+
+      // ActivityPipeline.transform: dedup → KST 변환 → 세션화. raw를 재사용하므로 CSV를 또 읽지 않는다.
       //   결과 DataFrame에는 event_date(KST 날짜), session_id 등이 포함됨.
-      val transformed = ActivityPipeline.readAndTransform(spark, inputs)
+      val transformed = ActivityPipeline.transform(raw)
 
       // incremental: 대상일만 write (lookback 행은 세션화 문맥용). backfill: 전체 event_date write.
       // (mode, runDate) match: Python의 match/case 또는 if-elif 체인과 유사한 패턴 매칭.
-      //   ("incremental", Some(d)): mode가 "incremental"이고 runDate가 Some일 때만 필터링.
-      //   _: 나머지 모든 경우(backfill 또는 runDate 없는 incremental) → 전체 반환.
       val toWrite = (mode, runDate) match {
         case ("incremental", Some(d)) => transformed.filter(col("event_date") === d)
         case _                        => transformed
       }
 
-      // .select("event_date").distinct(): event_date 컬럼만 추출 후 중복 제거.
-      //   Python: df[["event_date"]].drop_duplicates() 와 동일.
-      // .as[String]: DataFrame → Dataset[String] 타입 변환.
-      //   import spark.implicits._ 로 활성화된 Encoder[String]을 암묵적으로 사용.
-      //   Python의 .rdd.map(lambda r: r[0]) 처럼 단일 값 타입 시퀀스로 변환하는 개념.
-      // .collect(): Spark 분산 Dataset을 드라이버 메모리로 수집 → Array[String].
-      //   Python의 .collect() 또는 list(rdd.collect())와 동일.
-      // .toSeq.sorted: Array를 Seq로 변환 후 날짜 오름차순 정렬(문자열 비교, ISO 날짜는 사전순=시간순).
-      val dates = toWrite.select("event_date").distinct()
-        .as[String]
-        .collect().toSeq.sorted
+      // persist: 파티션별 write 루프에서 transform 파이프라인이 매번 재계산되는 것을 막는다.
+      //   (파티션 수만큼 전체 재실행 → 캐시 1회로 축소. 메모리 부족 시 디스크로 spill.)
+      //   Python(pandas)엔 없는 개념 — Spark는 lazy라 action마다 lineage를 다시 실행한다.
+      toWrite.persist()
+      try {
+        // toWrite.count(): persist 구체화 + 전역 sanity. 변환 후 행수가 raw보다 많으면 로직 오류(폭증).
+        //   설계 스펙 §검증게이트 ③("출력행수가 입력 대비 합리적")을 전역 1회로 복원.
+        val outCount = toWrite.count()
+        if (outCount > rawCount)
+          throw new RuntimeException(s"row explosion: output($outCount) > input($rawCount)")
 
-      // dates.foreach { d => ... }: Seq의 각 원소에 대해 블록을 실행.
-      //   Python의 for d in dates: 와 완전히 동일한 순차 반복.
-      dates.foreach { d =>
-        // 해당 event_date에 해당하는 행만 필터링(파티션 단위 처리).
-        val part = toWrite.filter(col("event_date") === d)
-        // PartitionWriter.validate: 행수>0, 키 not null, 출력<=입력 세 가지 검증.
-        //   inputCount: 위에서 계산한 원본 전체 행 수(파티션별 검증의 상한선).
-        val v = PartitionWriter.validate(part, inputCount)
-        // v.ok가 false이면 RuntimeException을 던져 파이프라인 중단(fail-fast).
-        //   s"...": Scala 문자열 보간(f-string과 동일).
-        if (!v.ok) throw new RuntimeException(s"validation failed for $d: ${v.message}")
-        // 검증 통과 시 해당 파티션을 staging+rename 원자 교체로 기록(설계 결정 6).
-        PartitionWriter.writePartition(spark, part, output, d)
-        println(s"[OK] wrote partition event_date=$d (${v.message})")
+        // event_date 목록(정렬) — 파티션 단위로 순회.
+        //   .as[String]: implicits로 DataFrame → Dataset[String]. .toSeq.sorted: ISO 날짜는 사전순=시간순.
+        val dates = toWrite.select("event_date").distinct()
+          .as[String]
+          .collect().toSeq.sorted
+
+        dates.foreach { d =>
+          // 해당 event_date 행만 필터(persist된 toWrite에서 읽으므로 재계산 없음).
+          val part = toWrite.filter(col("event_date") === d)
+          // 파티션 단위 검증(행수>0·키 not null). 실패 시 fail-fast.
+          val v = PartitionWriter.validate(part)
+          if (!v.ok) throw new RuntimeException(s"validation failed for $d: ${v.message}")
+          // 검증 통과 시 staging+rename 원자 교체로 기록(설계 결정 6).
+          PartitionWriter.writePartition(spark, part, output, d)
+          println(s"[OK] wrote partition event_date=$d (${v.message})")
+        }
+        println(s"[DONE] mode=$mode partitions=${dates.size}")
+      } finally {
+        // 캐시 해제(메모리/디스크 정리). 정상·예외 모두 실행.
+        toWrite.unpersist()
       }
-      println(s"[DONE] mode=$mode partitions=${dates.size}")
     } finally {
-      // finally: 정상 종료·예외 어느 경우에도 반드시 실행.
-      //   spark.stop(): SparkContext와 모든 실행자를 정상 종료(리소스 해제).
-      //   Python의 spark.stop() / with SparkSession(...) as spark: 컨텍스트 매니저 종료와 동일.
+      // spark.stop(): SparkContext와 모든 실행자를 정상 종료(리소스 해제).
+      //   Python의 spark.stop() / with 컨텍스트 매니저 종료와 동일.
       spark.stop()
     }
   }
