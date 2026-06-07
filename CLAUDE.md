@@ -39,6 +39,12 @@ parquet(snappy)로 적재하고, Hive External Table로 노출한 뒤 WAU(user_i
 - **검증**: 기본 `verification-before-completion`(WAU 실측). **Task 12에서 선택적으로 `workflow` verify**(두 WAU 적대적 교차검증, opt-in="ultracode"/"워크플로우로 WAU 교차검증"). 사용 시 README "사용 도구"에 workflow 추가.
 - **의도적 미사용**: ultraplan(웹 Claude Code+GitHub 필요, 가치 중복), Ouroboros(외부·무거움) → README엔 "검토 후 로컬·과제 규모상 제외"로 기술해 성숙도 어필.
 
+## 구현 4원칙 (karpathy-guidelines — 모든 코드 태스크에 적용)
+1. **Think Before Coding**: 가정은 명시하고 불확실하면 질문. 해석이 여럿이면 **조용히 고르지 말고** 제시. 더 단순한 길이 있으면 말할 것. (도구·설계 선택도 임의로 바꾸지 말고 알릴 것)
+2. **Simplicity First**: 요청을 푸는 최소 코드만. 투기적 추상화·미요청 설정·불가능 시나리오용 예외처리 금지. "시니어가 과하다 할까?" → 그러면 단순화.
+3. **Surgical Changes**: 건드릴 것만 수정. 인접 코드·주석·포맷 임의 개선/리팩터 금지. 기존 스타일 준수. 내 변경이 만든 orphan(미사용 import 등)만 정리. 모든 변경 라인은 요청에 직접 연결돼야.
+4. **Goal-Driven Execution**: 성공기준을 먼저 정의하고 검증될 때까지 루프. "검증"=테스트 통과/실제 실행 결과. (세션화=경계 케이스 TDD, WAU=실제 Spark 실행)
+
 ## 불변 규칙
 - **WAU 수치는 AI 주장 금지** — 반드시 실제 Spark 실행 결과로만 보고(verification-before-completion). 사용 쿼리 동봉.
 - **데이터 커밋 금지**: `data/*.csv`는 `.gitignore` 적용됨.
