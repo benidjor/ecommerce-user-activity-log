@@ -15,6 +15,7 @@ parquet(snappy)로 적재하고, Hive External Table로 노출한 뒤 WAU(user_i
   (태스크마다 구현 서브에이전트 → spec 리뷰 → code quality 리뷰).
 - 각 태스크는 TDD(실패 테스트 먼저). 계획서의 코드/명령을 그대로 사용.
 - 진행 상태는 Task 리스트로 추적(Task 0 환경설치는 완료됨).
+- 실행은 **순차**. 병렬 worktree(Task 2~7만 독립)도 가능하나 태스크가 작아(5~15분) 머지 오버헤드가 이득을 상회 → **Simplicity First로 순차 채택**. (Task 8~14는 의존성상 본래 순차)
 
 ## 환경 (확인됨 2026-06-07)
 - Spark 4.1.2 / Scala 2.13.17 / sbt(brew) 설치 완료.
