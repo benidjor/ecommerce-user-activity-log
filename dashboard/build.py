@@ -42,3 +42,20 @@ def render(marts, template_path):
     # "</" → "<\/" 치환은 JSON.parse가 동일하게 되돌리므로 데이터는 변하지 않는다.
     marts_json = json.dumps(marts, ensure_ascii=False).replace("</", "<\\/")
     return tmpl.render(marts_json=marts_json)
+
+
+def build(db_path="dashboard/marts.duckdb",
+          template_path="dashboard/templates/index.html.j2",
+          out_path="dashboard/site/index.html"):
+    """marts.duckdb → 정적 index.html. 산출 경로(pathlib.Path) 반환."""
+    marts = load_marts(db_path)
+    html = render(marts, template_path)
+    out = pathlib.Path(out_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(html, encoding="utf-8")
+    return out
+
+
+if __name__ == "__main__":
+    p = build()
+    print(f"built {p}")

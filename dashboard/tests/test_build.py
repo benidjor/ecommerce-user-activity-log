@@ -5,6 +5,7 @@ import re
 
 import duckdb
 
+from build import build
 from build import load_marts
 from build import render
 
@@ -43,3 +44,27 @@ def test_render_embeds_marts_and_kpi_sections():
     assert 'id="section-retention"' in html
     # 차트 라이브러리는 CDN.
     assert "cdn.jsdelivr.net/npm/chart.js" in html
+
+
+def test_build_writes_html_with_matching_row_counts(tmp_path):
+    db = tmp_path / "m.duckdb"
+    con = duckdb.connect(str(db))
+    con.execute(
+        "CREATE TABLE mart_dau AS SELECT * FROM (VALUES "
+        "('2019-10-07', 5, 7), ('2019-10-08', 6, 9)) "
+        "AS t(event_date, dau_users, dau_sessions)"
+    )
+    con.close()
+
+    out = tmp_path / "site" / "index.html"
+    build(db, "dashboard/templates/index.html.j2", out)
+
+    html = out.read_text(encoding="utf-8")
+    # 임베드 JSON 블록 추출 → 마트 행수가 duckdb 행수와 일치.
+    m = re.search(
+        r'<script id="marts-data" type="application/json">(.*?)</script>',
+        html,
+        re.S,
+    )
+    data = json.loads(m.group(1))
+    assert len(data["mart_dau"]) == 2
