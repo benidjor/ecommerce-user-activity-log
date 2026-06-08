@@ -21,6 +21,11 @@ project/project/
 # sbt JDK17 고정 (머신 종속 절대경로 — 로컬 전용, 커밋 금지)
 .sbtopts
 
+# === 대시보드(Phase 2) 생성물 / 로컬 venv ===
+# marts.duckdb는 서빙 사본이라 의도적으로 커밋(패턴3). 아래만 무시.
+dashboard/site/
+dashboard/.venv/
+
 # === IDE / OS ===
 .idea/
 .vscode/
