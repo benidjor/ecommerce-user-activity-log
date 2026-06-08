@@ -212,3 +212,61 @@
 - `dim_user`/`dim_product` 풀 스타(애드혹 제품 분석 필요 시 확장 — README 언급).
 - Iceberg/Delta, Stateful Sessionizer, 풀 dead-letter quarantine(상위 스펙의 프로덕션 확장 그대로).
 - 실시간/스트리밍.
+
+---
+
+## 11. Phase 2 결정 보강 (Mart Export + 정적 대시보드 — 2026-06-09 브레인스토밍)
+
+§3.4·§3.5·§9의 Phase 2를 구현하기 직전, 스펙이 열어둔 갈림길을 좁힌 결정이다. 본 §11은 §3·§9의 **증분**이며 충돌 없이 계승한다.
+
+### 11.1 데이터 흐름 (책임 경계)
+
+```
+output/gold/*/*.parquet  (Phase 1 산출 — Spark/Scala가 생성)
+        │  ① export_duckdb.py  (로컬 1회, Python+duckdb)
+        ▼
+dashboard/marts.duckdb   ← repo 커밋(패턴3·결정 F, 수백 행). Phase 3 Streamlit과 공유하는 단일 서빙 소스
+        │  ② build.py  (로컬 & CI, duckdb→pandas→Jinja2)
+        ▼
+dashboard/site/index.html ← 생성물(gitignore). 마트 데이터는 JSON으로 임베드, Chart.js는 CDN
+        │  ③ .github/workflows/pages.yml  (main push 시 build→deploy)
+        ▼
+GitHub Pages URL         ← 면접관 즉시 열람, 콜드스타트 0
+```
+
+- **CI는 Spark/parquet 불필요**: 커밋된 `marts.duckdb`만 읽어 `build.py` 실행 → HTML 배포. export(①)는 데이터 갱신 시 로컬 실행이며, Phase 4 Airflow DAG가 이를 흡수한다.
+
+### 11.2 결정 (이번 회차에서 확정)
+
+| # | 결정 | 선택 | 근거 |
+|---|---|---|---|
+| P2-1 | Pages 발행 | **GitHub Actions → Pages**(`actions/upload-pages-artifact`+`deploy-pages`) | main push마다 자동 빌드·배포, 항상-ON URL. `docs/`는 스펙 마크다운으로 점유돼 Pages 소스로 부적합 → main/docs 깨끗 유지. 사용자는 repo 설정에서 Pages source=Actions만 1회 켬 |
+| P2-2 | 차트 전달 | **Chart.js CDN** | 단순·작은 HTML. 데이터(JSON)는 HTML에 임베드돼 콜드스타트 0 유지. 면접관 브라우저는 온라인이라 CDN 충분 |
+| P2-3 | `index.html` | **커밋 안 함**(생성물, gitignore) | CI가 매 push 빌드/배포 → 생성물 중복 커밋·diff churn 제거. 로컬은 `build.py` 실행해 확인 |
+| P2-4 | `marts.duckdb` | **커밋함**(패턴3·결정 F 재확인) | 수백 행 서빙 사본 + CI 빌드 입력 + Phase 3 Streamlit 공유. `data/*.csv` 커밋금지와 구분되는 의도적 예외 |
+| P2-5 | 문서 산출 | **본 §11 보강 + 계획서**(별도 Phase 2 스펙 미작성) | §3·§9가 이미 상세 → 중복 스펙 회피(과한설계 지양) |
+
+### 11.3 컴포넌트 (Phase 2 산출 파일)
+
+| 파일 | 책임 | 의존 |
+|---|---|---|
+| `dashboard/export_duckdb.py` | `output/gold/*` parquet → `marts.duckdb`(마트당 1테이블) | duckdb |
+| `dashboard/build.py` | `marts.duckdb` → pandas → Jinja2 → `site/index.html`(마트 JSON 임베드, Pages 아티팩트용 전용 폴더) | duckdb·pandas·jinja2 |
+| `dashboard/templates/index.html.j2` | KPI 그룹(§5: Engagement/Conversion/Monetization/Retention) 레이아웃 + Chart.js(CDN) | — |
+| `dashboard/requirements.txt` | duckdb·pandas·jinja2·pytest 버전 고정 | — |
+| `.github/workflows/pages.yml` | main push → pip install → build.py → upload-pages-artifact → deploy-pages | `marts.duckdb`(커밋) |
+| `dashboard/tests/test_build.py` | pytest 스모크 | export·build |
+
+### 11.4 테스트 (TDD, pytest — 수치 단언 금지)
+
+- **export**: 합성 parquet 픽스처 → `marts.duckdb`에 기대 테이블 존재 + 테이블 행수 = 입력 행수.
+- **build**: `index.html` 생성됨 + 임베드 JSON의 마트별 행수 = duckdb 행수 + KPI 섹션 4개 존재.
+- **수치는 실데이터(`marts.duckdb`)로만 보고** — 테스트는 구조·정합성만 단언하고 특정 WAU 값은 단언하지 않는다(불변 규칙 §7 계승).
+
+### 11.5 언어 경계 (README 명시)
+
+export/build/CI/테스트는 **Python**(대시보드 레이어 — Spark Application 아님, 결정 E 허용). 파이프라인 본체·`GoldMarts`는 Scala 유지. Python 코드에도 한국어 설명 주석을 단다(사용자 Python 배경).
+
+### 11.6 Phase 2 범위 밖
+
+Streamlit 앱 → Phase 3. Airflow DAG/Discord → Phase 4. 이번 회차는 export + 정적 서빙(Pages)까지만.
