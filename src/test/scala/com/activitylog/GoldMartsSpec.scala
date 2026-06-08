@@ -30,4 +30,17 @@ class GoldMartsSpec extends AnyFunSuite with SparkTestBase {
     // 첫 행 date_key = 2019-10-07
     assert(rows.head.getAs[String]("date_key") == "2019-10-07")
   }
+
+  test("fact_daily_activity: 일×타입 그레인, 가산 측정") {
+    fixtureActivity()
+    val ss = spark; import ss.implicits._
+    val rows = GoldMarts.build(spark, "sql/gold", "fact_daily_activity")
+      .as[(String, String, Long, Long, Long, Double)].collect().toList
+    // 2019-10-07: view·cart·purchase 3행
+    val d07 = rows.filter(_._1 == "2019-10-07")
+    assert(d07.map(_._2).toSet == Set("view", "cart", "purchase"))
+    // purchase 행: event_count=1, distinct_users=1, distinct_sessions=1, sum_price=10.0
+    val purch = d07.find(_._2 == "purchase").get
+    assert(purch._3 == 1L && purch._4 == 1L && purch._5 == 1L && purch._6 == 10.0)
+  }
 }
