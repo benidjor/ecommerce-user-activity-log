@@ -86,4 +86,20 @@ class GoldMartsSpec extends AnyFunSuite with SparkTestBase {
     val w2 = rows(1)
     assert(w2._3 == 0L && w2._6.isEmpty)
   }
+
+  test("mart_cvr: 구매자/방문자 + WoW lag(첫 주 null)") {
+    fixtureActivity()
+    val ss = spark; import ss.implicits._
+    val rows = GoldMarts.build(spark, "sql/gold", "mart_cvr")
+      .as[(java.sql.Timestamp, Long, Long, Option[Double], Option[Double])].collect().toList
+    // 1주차: visitors user1,2(2) purchasers user1(1) → CVR 0.5, WoW null(첫 주)
+    val w1 = rows.head
+    assert(w1._2 == 2L && w1._3 == 1L)
+    assert(math.abs(w1._4.get - 0.5) < 1e-9)
+    assert(w1._5.isEmpty)
+    // 2주차: visitors user3(1) purchasers 0 → CVR 0.0, WoW = 0.0 - 0.5 = -0.5
+    val w2 = rows(1)
+    assert(math.abs(w2._4.get - 0.0) < 1e-9)
+    assert(math.abs(w2._5.get - (-0.5)) < 1e-9)
+  }
 }
