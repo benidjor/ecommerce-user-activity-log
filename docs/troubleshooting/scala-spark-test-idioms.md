@@ -84,6 +84,43 @@ val ids: Seq[String] =
 
 - 테스트에서는 표준 implicits 기반 `.as[T]`를 사용한다(§1과 같은 `val ss = spark` 패턴 위에서).
 
+## 3. SQL 결과 타입과 `.as[T]` 인코더 불일치 (`CANNOT_UP_CAST`)
+
+Gold 마트(Phase 1) `mart_retention` 테스트에서, 계획서 SQL을 그대로 `.as[(..., Int, ..., Double)]`로 디코딩하니 분석 단계에서 죽었다. SQL 산술의 **결과 타입**이 테스트 튜플 타입과 달랐기 때문이다.
+
+### 증상
+
+```
+org.apache.spark.sql.AnalysisException: [CANNOT_UP_CAST_DATATYPE]
+Cannot up cast week_offset from "DOUBLE" to "INT".
+Cannot up cast retention_rate from "DECIMAL(38,16)" to "DOUBLE".
+```
+
+### 원인
+
+Spark SQL 산술의 타입 규칙이 Postgres/MySQL 직관과 다르다.
+
+- `datediff(...) / 7` — Spark의 `/`는 **실수 나눗셈**이라 피연산자가 정수여도 결과는 `DOUBLE`. "정수 나눗셈이라 INT"라는 가정이 틀림.
+- `count(...) * 1.0 / cohort` — 리터럴 `1.0`이 `DECIMAL`이라 `정수 * DECIMAL / 정수` = `DECIMAL`. (`정수 / 정수`는 이미 `DOUBLE`이라, 비율을 원하면 `*1.0`이 오히려 DECIMAL을 만든다.)
+- `.as[T]`의 Encoder는 **넓히는(up-cast) 변환만** 허용한다. `DOUBLE→INT`(축소)·`DECIMAL→DOUBLE`(비호환)은 막혀 컴파일이 아니라 쿼리 분석 단계에서 실패한다.
+
+### 해결
+
+테스트 튜플 타입을 바꾸기보다, **SQL이 의도한 타입을 내도록** `CAST`로 고정한다(의도가 코드에 드러나고 마트 스키마도 깔끔).
+
+```sql
+-- 주 오프셋은 정수(주 경계가 7일 배수라 무손실). SELECT와 GROUP BY에 동일 표현식을 둬야 그룹핑이 맞음.
+CAST(datediff(uw.wk, c.cohort_week) / 7 AS INT)            AS week_offset,
+-- 비율은 실수. 정수/정수가 이미 DOUBLE이므로 분자만 캐스팅(또는 그대로 둬도 DOUBLE).
+CAST(count(DISTINCT uw.user_id) AS DOUBLE) / cs.cohort_users AS retention_rate
+```
+
+### 재발 방지
+
+- 마트 SQL을 추가할 때, 테스트가 `.as[(...)]`로 받을 컬럼은 **SQL 쪽 타입을 먼저 확정**한다. `/`=DOUBLE, `*1.0`=DECIMAL, `datediff`=INT, `count`=BIGINT를 기억.
+- `CAST(... AS INT)`를 `GROUP BY`에도 쓸 땐 `SELECT`와 **동일 표현식**이어야 그룹핑이 일치한다.
+
 ## 관련
 
 - 이 implicits/Encoder가 동작하려면 Spark가 클래스패스에 있어야 한다 → [spark-provided-classpath.md](spark-provided-classpath.md).
+- Gold 마트 실행·검증 절차 → [../runbook/gold-marts.md](../runbook/gold-marts.md).

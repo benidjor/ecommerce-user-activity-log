@@ -95,10 +95,25 @@ run  / javaOptions ++= jvm17Opens,
 spark-submit --conf spark.driver.extraJavaOptions="--add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED" ...
 ```
 
+### date/timestamp 컬럼을 collect/기록할 때는 `sun.util.calendar`도
+
+Gold 마트(Phase 1)에서 `dim_date`의 `date`/`iso_week`, 각 마트의 `week_start` 같은 `date`/`timestamp` 컬럼을 `collect()`하거나 parquet로 기록하면, 위 nio 묶음만으로는 다음이 뜬다.
+
+```
+java.lang.IllegalAccessException: symbolic reference class is not accessible:
+  class sun.util.calendar.ZoneInfo, from ... SparkDateTimeUtils
+```
+
+Spark가 날짜/시간을 `java.sql.Date`/`Timestamp`로 변환할 때 `sun.util.calendar`에 접근하기 때문이다. 기존 WAU 파이프라인은 date 컬럼을 collect하지 않아 표면화되지 않다가 Gold 마트에서 처음 부딪혔다. `jvm17Opens`(build.sbt)와 `spark-submit`의 `extraJavaOptions` **양쪽 모두**에 한 줄을 더한다.
+
+```
+--add-opens=java.base/sun.util.calendar=ALL-UNNAMED
+```
+
 ### 재발 방지
 
 - `build.sbt`의 `jvm17Opens`로 고정. `fork := true`와 한 쌍으로 둔다(fork 안 하면 javaOptions가 무시됨).
-- 새 `InaccessibleObjectException`이 뜨면 메시지에 나온 `module/package`를 `jvm17Opens`에 추가한다.
+- 새 `InaccessibleObjectException`/`IllegalAccessException`이 뜨면 메시지에 나온 `module/package`를 `jvm17Opens`에 추가하고, `spark-submit`의 `extraJavaOptions`에도 동일하게 넣는다.
 
 ## 관련
 
