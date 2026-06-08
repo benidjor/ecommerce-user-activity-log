@@ -8,9 +8,12 @@ parquet(snappy)로 적재하고, Hive External Table로 노출한 뒤 WAU(user_i
 ## 핵심 문서 (먼저 읽을 것)
 - 설계 스펙(결정 로그 9개 + 핵심 로직 명세): `docs/superpowers/specs/2026-06-07-wau-activity-log-design.md`
 - 구현 계획(Task 0~14, 완전한 코드/명령/기대결과): `docs/superpowers/plans/2026-06-07-wau-activity-log.md`
+- (확장) 메달리온 BI 대시보드 설계 스펙: `docs/superpowers/specs/2026-06-08-medallion-bi-dashboard-design.md`
+- (확장) Gold 마트 Phase 1 계획: `docs/superpowers/plans/2026-06-08-gold-marts-phase1.md`
 
 ## 진행 방식
-- 작업 브랜치: `feat/activity-log` (main에 직접 구현 금지). 태스크마다 커밋.
+- main에 직접 구현 금지, 태스크마다 커밋.
+- **PR 스택 금지**: 각 Task/Phase를 **main에서 분기 → PR(base=main) → squash 머지 → 다음은 갱신된 main에서 분기**. 직전 브랜치 base 금지(스택 머지 사고 이력).
 - 구현은 `superpowers:subagent-driven-development`로 계획을 Task 1부터 실행
   (태스크마다 구현 서브에이전트 → spec 리뷰 → code quality 리뷰).
 - 각 태스크는 TDD(실패 테스트 먼저). 계획서의 코드/명령을 그대로 사용.
@@ -32,6 +35,12 @@ parquet(snappy)로 적재하고, Hive External Table로 노출한 뒤 WAU(user_i
 7. **테이블**: 고전적 Hive External Table + Spark **임베디드 Derby metastore**(별도 서비스 X). Iceberg/Delta는 README "프로덕션 확장"으로만.
 8. **언어**: Scala + sbt + 로컬 Spark(local 모드). spark-submit로 thin jar 실행.
 9. **오케스트레이션**: Airflow는 **선택(어필용)** — 본체 완성·검증 후 BashOperator+spark-submit, `catchup=True`가 backfill 겸함.
+
+## 확장: 메달리온 BI 대시보드 (코어 완료 후 진행)
+원과제 코어(WAU+Hive External Table, Task 1~12) 완료 후, Gold 마트·Airflow 일별 오케스트레이션·BI 대시보드·Discord 알람을 얹는다(스펙 2026-06-08, Phase 0~4).
+- **요구사항 가드레일(불변)**: "Hive External Table" 요구 = **Silver `activity`**. DuckDB는 Gold 서빙 사본(Hive 대체 아님). 제출용 WAU는 Hive `activity`(`sql/wau.sql`) 정본. **Spark Application은 전부 Scala**(파이프라인·DailySplitter·GoldMarts); 대시보드(정적/Streamlit)·Airflow·DuckDB export는 Spark 외라 **Python 허용**(README에 경계 명시).
+- **서빙**: 정적 HTML(GitHub Pages) + Streamlit Cloud, 둘 다 repo 커밋된 DuckDB 파일(패턴3) 읽기. Metabase/Postgres는 무료·항상ON 불충족이라 범위 밖.
+- **Gold 모델**: 경량 스타(`dim_date`+집계 fact) + count-distinct 비가산 지표 마트. **원자 fact는 Silver(약 9천만 행), Gold는 집계(수백 행)**. SQL은 `sql/gold/*.sql`(SoT) + 얇은 `GoldMarts` 러너(WAU의 .scala/.sql 이중화 반복 안 함).
 
 ## AI 도구 조합 (근거: `wau-ai-tooling-strategy.html` §04, line 689 "최소 구성=superpowers+karpathy")
 - **방법론(필수)**: superpowers(`brainstorming`·`test-driven-development`·`verification-before-completion`) + karpathy-guidelines(Think·Simplicity·Surgical·Goal).
