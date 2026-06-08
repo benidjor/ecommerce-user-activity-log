@@ -22,6 +22,15 @@
 | 면접관 마찰 0 열람(맥북 꺼져도) | 정적 HTML → GitHub Pages(즉시·항상 ON) + Streamlit Cloud(인터랙티브) |
 | Discord 알람(원설계 복원) | DAG `on_success`/`on_failure` 콜백 → Discord 웹훅 |
 
+### 1.1 요구사항 가드레일 (확장이 원과제를 침범하지 않도록)
+
+본 확장(Gold·DuckDB·대시보드)은 원과제 요구사항을 **추가**할 뿐 대체하지 않는다. 아래를 불변으로 지킨다.
+
+- **"Hive External Table" 요구 = Silver `activity`** (parquet + Hive metastore). DuckDB는 Hive가 아니며, 요구를 대체하지 않는 **Gold 서빙 사본**일 뿐이다.
+- **제출용 WAU(요구 7) = Hive `activity`에서 계산** — `sql/wau.sql` on `activity` → `results/`. 대시보드가 DuckDB에서 읽는 WAU는 *서빙 표시*이지 제출물이 아니다.
+- **Spark Application 언어 제약** — 파이프라인·`DailySplitter`·`GoldMarts`는 Scala. DuckDB export·정적 빌드·Streamlit·Airflow는 Spark 외 서빙/오케스트레이션이라 Python 허용(README에 경계 명시).
+- 데이터 흐름: Bronze→Silver(Hive)→Gold(parquet+Hive `gold_*`)까지 Hive 일관, **DuckDB는 맨 끝 대시보드용 사본**.
+
 ---
 
 ## 2. 아키텍처 (메달리온 + 일별 흐름)
@@ -37,8 +46,8 @@
  activity table  │        → dim_date · fact_daily_activity · mart_*  (parquet + External Table)  │
                  │    ──▶ task4 Export Gold 마트 → DuckDB 파일 (dashboard/marts.duckdb)            │
  [Gold]          │    ──▶ task5 Build  정적 HTML 렌더 → dashboard/index.html                       │
- 마트(parquet+   │                                                                                │
-   DuckDB 파일)  │  on_success / on_failure ─────────▶ Discord 웹훅(run 메타데이터·에러 딥링크)         │
+ 마트(parquet+    │                                                                               │
+   DuckDB 파일)   │  on_success / on_failure ─────────▶ Discord 웹훅(run 메타데이터·에러 딥링크)         │
                  └───────────────────────────────────────────────────────────────────────────────┘
                           │ (산출물을 repo에 커밋 — 얇은 단계, DAG가 push 안 함)
                           ▼
