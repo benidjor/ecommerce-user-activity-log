@@ -114,4 +114,26 @@ class GoldMartsSpec extends AnyFunSuite with SparkTestBase {
     // 부동소수는 형제 테스트와 동일하게 epsilon 비교(== 직접 비교 회피). 건수(_3)는 Long이라 ==.
     assert(math.abs(w1._2 - 10.0) < 1e-9 && w1._3 == 1L && math.abs(w1._4 - 10.0) < 1e-9)
   }
+
+  test("mart_retention: 코호트 첫 주 기준 offset·retention_rate") {
+    val ss = spark; import ss.implicits._
+    // user1: 1주차·2주차 활동 / user2: 1주차만 / user3: 2주차 첫 활동
+    Seq(
+      (1L, "a", "view", 0.0, "2019-10-07"),
+      (1L, "a", "view", 0.0, "2019-10-14"),
+      (2L, "b", "view", 0.0, "2019-10-07"),
+      (3L, "c", "view", 0.0, "2019-10-14")
+    ).toDF("user_id", "session_id", "event_type", "price", "event_date")
+      .createOrReplaceTempView("activity")
+
+    val rows = GoldMarts.build(spark, "sql/gold", "mart_retention")
+      .as[(java.sql.Timestamp, Int, Long, Long, Double)].collect().toList
+    // 코호트 10-07(월): 크기 2(user1,2). offset0 active 2 → 1.0, offset1 active 1(user1) → 0.5
+    val c1 = rows.filter(r => r._1.toString.startsWith("2019-10-07"))
+    val o0 = c1.find(_._2 == 0).get; assert(o0._3 == 2L && math.abs(o0._5 - 1.0) < 1e-9)
+    val o1 = c1.find(_._2 == 1).get; assert(o1._3 == 1L && math.abs(o1._5 - 0.5) < 1e-9)
+    // 코호트 10-14(월): 크기 1(user3). offset0 active 1 → 1.0
+    val c2 = rows.filter(r => r._1.toString.startsWith("2019-10-14"))
+    assert(c2.length == 1 && c2.head._2 == 0 && math.abs(c2.head._5 - 1.0) < 1e-9)
+  }
 }
