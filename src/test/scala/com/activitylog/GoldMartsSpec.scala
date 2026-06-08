@@ -60,4 +60,15 @@ class GoldMartsSpec extends AnyFunSuite with SparkTestBase {
       .as[(String, Long)].collect().toList
     assert(mau == List(("2019-10", 3L)))
   }
+
+  test("mart_stickiness: DAU/MAU 비율") {
+    fixtureActivity()
+    val ss = spark; import ss.implicits._
+    val rows = GoldMarts.build(spark, "sql/gold", "mart_stickiness")
+      .as[(java.sql.Date, Long, Long, Double)].collect().toList
+    // 2019-10-07: DAU 1 / MAU 3 = 0.333...
+    val d07 = rows.find(_._1.toString == "2019-10-07").get
+    assert(d07._2 == 1L && d07._3 == 3L)
+    assert(math.abs(d07._4 - (1.0 / 3.0)) < 1e-9)
+  }
 }
