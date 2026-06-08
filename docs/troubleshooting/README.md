@@ -9,3 +9,4 @@
 | [scala-spark-test-idioms.md](scala-spark-test-idioms.md) | `@transient var` implicits, `Dataset.as[T]` 인코더 표현 |
 | [hive-external-table.md](hive-external-table.md) | spark-shell 카탈로그, `MSCK REPAIR` 파티션 인식 |
 | [spark-sql-driver-memory-oom.md](spark-sql-driver-memory-oom.md) | 전체 데이터 WAU의 `COUNT(DISTINCT session_id)` OOM, `--driver-memory` |
+| [dashboard-build-deploy.md](dashboard-build-deploy.md) | Pages public 요건·소스 순서, duckdb 비결정성, Chart.js 혼합차트·`</script>` 하드닝 |
