@@ -71,4 +71,19 @@ class GoldMartsSpec extends AnyFunSuite with SparkTestBase {
     assert(d07._2 == 1L && d07._3 == 3L)
     assert(math.abs(d07._4 - (1.0 / 3.0)) < 1e-9)
   }
+
+  test("mart_funnel: 단계 distinct + 전환율, 상위 0이면 전환율 null") {
+    fixtureActivity()
+    val ss = spark; import ss.implicits._
+    val rows = GoldMarts.build(spark, "sql/gold", "mart_funnel")
+      .as[(java.sql.Timestamp, Long, Long, Long, Option[Double], Option[Double])].collect().toList
+    // 1주차(10-07~13): view user1,2(2) cart user1(1) purchase user1(1)
+    val w1 = rows.head
+    assert(w1._2 == 2L && w1._3 == 1L && w1._4 == 1L)
+    assert(math.abs(w1._5.get - 0.5) < 1e-9)   // cart/view = 1/2
+    assert(math.abs(w1._6.get - 1.0) < 1e-9)   // purchase/cart = 1/1
+    // 2주차(10-14~): view user3(1) cart 0 → cart_to_purchase = null(분모 0)
+    val w2 = rows(1)
+    assert(w2._3 == 0L && w2._6.isEmpty)
+  }
 }
