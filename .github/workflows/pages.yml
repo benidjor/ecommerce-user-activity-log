@@ -1,0 +1,44 @@
+# Phase 2 정적 대시보드 배포: main push마다 커밋된 marts.duckdb로 build.py를
+# 실행해 dashboard/site/를 GitHub Pages에 배포. Spark/parquet 불필요.
+# 사전 1회: repo Settings → Pages → Source = "GitHub Actions"로 설정해야 함.
+name: Deploy dashboard to Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'dashboard/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install deps
+        run: pip install -r dashboard/requirements.txt
+      - name: Build static dashboard
+        run: python dashboard/build.py
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dashboard/site
+      - name: Deploy to Pages
+        id: deploy
+        uses: actions/deploy-pages@v4
