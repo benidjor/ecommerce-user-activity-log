@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>이커머스 Activity 대시보드 — Gold 마트</title>
+<!-- 차트는 Chart.js CDN. 데이터(JSON)는 아래 marts-data 블록에 임베드 → 콜드스타트 0. -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+ body{font-family:system-ui,-apple-system,sans-serif;margin:0;background:#f7f7f9;color:#1c1c28}
+ header{background:#1c1c28;color:#fff;padding:20px 28px}
+ header h1{margin:0;font-size:20px}
+ header p{margin:6px 0 0;font-size:13px;color:#b8b8c8}
+ main{max-width:1100px;margin:0 auto;padding:24px}
+ section{background:#fff;border:1px solid #e6e6ee;border-radius:10px;padding:18px 20px;margin-bottom:22px}
+ section h2{margin:0 0 4px;font-size:16px}
+ section .note{margin:0 0 14px;font-size:12px;color:#7a7a8c}
+ .grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+ .card{min-width:0}
+ .card h3{margin:0 0 8px;font-size:13px;color:#444}
+ canvas{max-height:260px}
+ table.ret{border-collapse:collapse;font-size:12px}
+ table.ret td,table.ret th{border:1px solid #e6e6ee;padding:4px 8px;text-align:center}
+ footer{max-width:1100px;margin:0 auto;padding:0 24px 40px;font-size:12px;color:#7a7a8c}
+</style>
+</head>
+<body>
+<header>
+  <h1>이커머스 Activity 대시보드 — Gold 마트</h1>
+  <p>Silver activity → Gold 마트(parquet) → marts.duckdb. 수치는 실제 집계 결과(2019 Oct/Nov).</p>
+</header>
+<main>
+  <section id="section-engagement">
+    <h2>Engagement</h2>
+    <p class="note">DAU·WAU·MAU·Stickiness. MAU·Stickiness는 데이터 2개월이라 표본이 얇음(점 2~3개).</p>
+    <div class="grid">
+      <div class="card"><h3>DAU (일별 활성 user/session)</h3><canvas id="c-dau"></canvas></div>
+      <div class="card"><h3>WAU (주별 활성 user/session)</h3><canvas id="c-wau"></canvas></div>
+      <div class="card"><h3>MAU (월별 활성 user)</h3><canvas id="c-mau"></canvas></div>
+      <div class="card"><h3>Stickiness (DAU/MAU)</h3><canvas id="c-stick"></canvas></div>
+    </div>
+  </section>
+  <section id="section-conversion">
+    <h2>Conversion</h2>
+    <p class="note">퍼널은 가장 최근 주 기준(주별 distinct는 비가산이라 합산 안 함). CVR = 구매자/방문자.</p>
+    <div class="grid">
+      <div class="card"><h3>퍼널 (최근 주: view→cart→purchase)</h3><canvas id="c-funnel"></canvas></div>
+      <div class="card"><h3>주별 CVR + 전주 대비(WoW)</h3><canvas id="c-cvr"></canvas></div>
+    </div>
+  </section>
+  <section id="section-monetization">
+    <h2>Monetization</h2>
+    <p class="note">매출 = 구매 이벤트 price 합. order_id 없어 구매 이벤트를 주문 proxy로 사용. AOV = 매출/구매건수.</p>
+    <div class="grid">
+      <div class="card"><h3>주별 매출</h3><canvas id="c-rev"></canvas></div>
+      <div class="card"><h3>주별 AOV</h3><canvas id="c-aov"></canvas></div>
+    </div>
+  </section>
+  <section id="section-retention">
+    <h2>Retention</h2>
+    <p class="note">주차 코호트(데이터 내 첫 활동 주). 2개월(9주)이라 작은 삼각형. 색이 진할수록 잔존율 높음.</p>
+    <div id="ret-table"></div>
+  </section>
+</main>
+<footer>생성: build.py(duckdb→pandas→Jinja2). 차트: Chart.js CDN. 데이터는 이 페이지에 임베드됨.</footer>
+
+<!-- 마트 데이터: JSON 블록으로 임베드(스크립트 파싱 안정 + 추출 용이). -->
+<script id="marts-data" type="application/json">{{ marts_json | safe }}</script>
+<script>
+const MARTS = JSON.parse(document.getElementById('marts-data').textContent);
+
+// 공통 헬퍼: 색 팔레트 / 차트 옵션 / 라인·바 생성.
+function palette(i){return ['#5b8def','#27ae60','#e67e22','#9b59b6'][i % 4];}
+function opt(){return {responsive:true,plugins:{legend:{labels:{boxWidth:12,font:{size:11}}}},
+  scales:{x:{ticks:{font:{size:10}}},y:{ticks:{font:{size:10}}}}};}
+function lineChart(id, labels, series){
+  const el=document.getElementById(id); if(!el) return;
+  new Chart(el,{type:'line',data:{labels:labels,datasets:series.map((s,i)=>(
+    {label:s.label,data:s.data,borderColor:palette(i),backgroundColor:palette(i),tension:.2}))},options:opt()});
+}
+function barChart(id, labels, series){
+  const el=document.getElementById(id); if(!el) return;
+  new Chart(el,{type:'bar',data:{labels:labels,datasets:series.map((s,i)=>(
+    {label:s.label,data:s.data,backgroundColor:palette(i)}))},options:opt()});
+}
+
+// Engagement
+if(MARTS.mart_dau){const d=MARTS.mart_dau;
+  lineChart('c-dau',d.map(r=>r.event_date),
+    [{label:'users',data:d.map(r=>r.dau_users)},{label:'sessions',data:d.map(r=>r.dau_sessions)}]);}
+if(MARTS.mart_wau){const d=MARTS.mart_wau;
+  lineChart('c-wau',d.map(r=>r.week_start),
+    [{label:'users',data:d.map(r=>r.wau_users)},{label:'sessions',data:d.map(r=>r.wau_sessions)}]);}
+if(MARTS.mart_mau){const d=MARTS.mart_mau;
+  barChart('c-mau',d.map(r=>r.month),[{label:'MAU',data:d.map(r=>r.mau_users)}]);}
+if(MARTS.mart_stickiness){const d=MARTS.mart_stickiness;
+  lineChart('c-stick',d.map(r=>r.date),[{label:'stickiness',data:d.map(r=>r.stickiness)}]);}
+
+// Conversion
+if(MARTS.mart_funnel && MARTS.mart_funnel.length){
+  // mart_funnel.sql의 ORDER BY week_start로 정렬 저장 → 마지막 행이 가장 최근 주.
+  const last=MARTS.mart_funnel[MARTS.mart_funnel.length-1];
+  barChart('c-funnel',['view','cart','purchase'],
+    [{label:last.week_start,data:[last.users_view,last.users_cart,last.users_purchase]}]);}
+if(MARTS.mart_cvr){const d=MARTS.mart_cvr; const el=document.getElementById('c-cvr');
+  if(el) new Chart(el,{type:'bar',data:{labels:d.map(r=>r.week_start),datasets:[
+    {type:'line',label:'CVR',data:d.map(r=>r.cvr),borderColor:palette(0),backgroundColor:palette(0),tension:.2},
+    {type:'bar',label:'WoW Δ',data:d.map(r=>r.cvr_wow_delta),backgroundColor:palette(2)}]},options:opt()});}
+
+// Monetization
+if(MARTS.mart_revenue){const d=MARTS.mart_revenue;
+  barChart('c-rev',d.map(r=>r.week_start),[{label:'revenue',data:d.map(r=>r.revenue)}]);
+  lineChart('c-aov',d.map(r=>r.week_start),[{label:'AOV',data:d.map(r=>r.aov)}]);}
+
+// Retention: 코호트 × week_offset 삼각 테이블(셀=잔존율). Chart.js 매트릭스 플러그인 대신 CSS 음영.
+(function(){
+  const d=MARTS.mart_retention; const host=document.getElementById('ret-table'); if(!d || !host) return;
+  const cohorts=[...new Set(d.map(r=>r.cohort_week))].sort();
+  const offsets=[...new Set(d.map(r=>r.week_offset))].sort((a,b)=>a-b);
+  const idx={}; d.forEach(r=>{idx[r.cohort_week+'|'+r.week_offset]=r.retention_rate;});
+  let html='<table class="ret"><tr><th>코호트 / 주차</th>'+offsets.map(o=>'<th>+'+o+'</th>').join('')+'</tr>';
+  cohorts.forEach(c=>{
+    html+='<tr><th>'+c+'</th>'+offsets.map(o=>{
+      const v=idx[c+'|'+o];
+      if(v==null) return '<td></td>';
+      const a=Math.max(0,Math.min(1,v));
+      return '<td style="background:rgba(39,174,96,'+a.toFixed(2)+')">'+(v*100).toFixed(0)+'%</td>';
+    }).join('')+'</tr>';
+  });
+  html+='</table>'; host.innerHTML=html;
+})();
+</script>
+</body>
+</html>

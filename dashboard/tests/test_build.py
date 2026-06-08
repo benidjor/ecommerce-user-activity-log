@@ -6,6 +6,7 @@ import re
 import duckdb
 
 from build import load_marts
+from build import render
 
 
 def test_load_marts_serializes_dates_and_nulls(tmp_path):
@@ -26,3 +27,19 @@ def test_load_marts_serializes_dates_and_nulls(tmp_path):
     assert marts["mart_cvr"][0]["cvr_wow_delta"] is None
     assert marts["mart_cvr"][1]["cvr_wow_delta"] == 0.025
     assert len(marts["mart_cvr"]) == 2
+
+
+def test_render_embeds_marts_and_kpi_sections():
+    marts = {"mart_dau": [{"event_date": "2019-10-07", "dau_users": 5, "dau_sessions": 7}]}
+    html = render(marts, "dashboard/templates/index.html.j2")
+
+    # 데이터가 JSON 스크립트 블록에 임베드됐는지.
+    assert 'id="marts-data"' in html
+    assert '"mart_dau"' in html
+    # KPI 4섹션 DOM 존재.
+    assert 'id="section-engagement"' in html
+    assert 'id="section-conversion"' in html
+    assert 'id="section-monetization"' in html
+    assert 'id="section-retention"' in html
+    # 차트 라이브러리는 CDN.
+    assert "cdn.jsdelivr.net/npm/chart.js" in html
