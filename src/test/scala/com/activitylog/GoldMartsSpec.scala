@@ -43,4 +43,21 @@ class GoldMartsSpec extends AnyFunSuite with SparkTestBase {
     val purch = d07.find(_._2 == "purchase").get
     assert(purch._3 == 1L && purch._4 == 1L && purch._5 == 1L && purch._6 == 10.0)
   }
+
+  test("mart_dau/wau/mau: 비가산 distinct 집계") {
+    fixtureActivity()
+    val ss = spark; import ss.implicits._
+    // DAU: 10-07 user1, 10-08 user2, 10-14 user3 → 각 1
+    val dau = GoldMarts.build(spark, "sql/gold", "mart_dau")
+      .as[(String, Long, Long)].collect().map(r => (r._1, r._2)).toList
+    assert(dau == List(("2019-10-07", 1L), ("2019-10-08", 1L), ("2019-10-14", 1L)))
+    // WAU: 1주차(10-07~13) user1,2 → 2 / 2주차(10-14~) user3 → 1
+    val wau = GoldMarts.build(spark, "sql/gold", "mart_wau")
+      .as[(java.sql.Timestamp, Long, Long)].collect().map(_._2).toList
+    assert(wau == List(2L, 1L))
+    // MAU: 2019-10 한 달 user1,2,3 → 3
+    val mau = GoldMarts.build(spark, "sql/gold", "mart_mau")
+      .as[(String, Long)].collect().toList
+    assert(mau == List(("2019-10", 3L)))
+  }
 }
