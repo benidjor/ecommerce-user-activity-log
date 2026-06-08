@@ -1,6 +1,6 @@
 # 설계 스펙 — 메달리온 파이프라인 + Airflow + BI 대시보드 (Gold 서빙 확장)
 
-기존 WAU 파이프라인(Bronze→Silver) 위에 **Gold 마트 레이어 + Airflow 일별 오케스트레이션 + BI 대시보드 서빙 + Discord 알람**을 얹어, 면접관이 "원본 → 정제 → 집계 → DB → 대시보드"가 매일 흐르는 파이프라인을 **실제로 실행·열람**할 수 있게 한다.
+기존 WAU 파이프라인(Bronze→Silver) 위에 **Gold 마트 레이어 + Airflow 일별 오케스트레이션 + BI 대시보드 서빙 + Discord 알람**을 얹어, "원본 → 정제 → 집계 → DB → 대시보드"가 매일 흐르는 파이프라인을 **실제로 실행·열람**할 수 있게 한다.
 
 상위 프로젝트 스펙: [2026-06-07-wau-activity-log-design.md](2026-06-07-wau-activity-log-design.md). 본 스펙은 그 위의 **증분 설계**이며, 기존 결정(KST 1회 변환·결정적 session_id·Hive External Table·멱등 복구)을 그대로 계승한다.
 
@@ -16,10 +16,10 @@
 
 | 확장 목표(사용자 비전) | 충족 |
 |---|---|
-| Bronze→Silver→Gold→DB→대시보드 일별 흐름 어필 | Airflow DAG가 5단계를 매일 실행, UI 그래프로 시연 |
+| Bronze→Silver→Gold→DB→대시보드 일별 흐름 어필 | Airflow DAG가 단계를 매일 실행, UI 그래프로 시연 |
 | Gold 차원 모델(스타 스키마) | `dim_date`(+선택 `dim_event_type`) + `fact_daily_activity` + 비가산 지표 마트 |
-| 마트를 DB 적재 후 대시보드 연결 | Gold → Postgres 적재 → Metabase(라이브) |
-| 면접관 마찰 0 열람 | 정적 HTML → GitHub Pages(항상 떠 있음, 비용 0) |
+| 마트를 DB로 노출 후 대시보드 연결 | Gold → **DuckDB 파일(repo 커밋, 패턴 3)** → 정적·Streamlit 둘 다 SQL로 읽기 |
+| 면접관 마찰 0 열람(맥북 꺼져도) | 정적 HTML → GitHub Pages(즉시·항상 ON) + Streamlit Cloud(인터랙티브) |
 | Discord 알람(원설계 복원) | DAG `on_success`/`on_failure` 콜백 → Discord 웹훅 |
 
 ---
@@ -27,27 +27,31 @@
 ## 2. 아키텍처 (메달리온 + 일별 흐름)
 
 ```
-                 ┌──────────── Airflow DAG  activity_daily (@daily, catchup=True) ────────────┐
-                 │                                                                            │
- [Bronze]        │  task0(1회·DAG 외)  월 CSV → 일별 분할  data/daily/event_date=YYYY-MM-DD/   │
- raw CSV(UTC) ───┼──▶ task1 Silver  spark-submit --mode incremental --run-date {{ds}}          │
- 2019-Oct/Nov    │        → activity (Hive External Table, parquet, KST 일별 파티션)            │
-                 │    ──▶ task2 gate   FileSensor _SUCCESS                                      │
- [Silver]        │    ──▶ task3 Gold   spark-sql sql/gold/*.sql                                 │
- activity table  │        → dim_date · fact_daily_activity · mart_*  (parquet + External Table) │
-                 │    ──▶ task4 Load   Gold 마트 → Postgres (Spark JDBC write)                  │
- [Gold]          │    ──▶ task5 Publish 정적 HTML 렌더 → dashboard/index.html → GitHub Pages    │
- 마트(parquet+DB)│                                                                            │
-                 │  on_success / on_failure ─────────▶ Discord 웹훅(run 메타데이터·에러 딥링크)  │
-                 └────────────────────────────────────────────────────────────────────────────┘
-                                    │                                   │
-                       ┌────────────┘                                   └────────────┐
-              [서빙 A · 정적/항상]                                      [서빙 B · 라이브/어필]
-              GitHub Pages (정적 HTML, Chart.js)                       docker-compose: Postgres + Metabase
-              면접관 URL 클릭, 비용 0                                   면접관(또는 본인) `up` → 라이브 필터
+                 ┌──────────── Airflow DAG  activity_daily (@daily, catchup=True) ───────────────┐
+                 │                                                                               │
+ [Bronze]        │  task0(1회·DAG 외)  월 CSV → 일별 분할  data/daily/event_date=YYYY-MM-DD/         │
+ raw CSV(UTC) ───┼──▶ task1 Silver  spark-submit --mode incremental --run-date {{ds}}            │
+ 2019-Oct/Nov    │        → activity (Hive External Table, parquet, KST 일별 파티션)                │
+                 │    ──▶ task2 gate   FileSensor _SUCCESS                                       │
+ [Silver]        │    ──▶ task3 Gold   spark-sql sql/gold/*.sql                                  │
+ activity table  │        → dim_date · fact_daily_activity · mart_*  (parquet + External Table)  │
+                 │    ──▶ task4 Export Gold 마트 → DuckDB 파일 (dashboard/marts.duckdb)            │
+ [Gold]          │    ──▶ task5 Build  정적 HTML 렌더 → dashboard/index.html                       │
+ 마트(parquet+   │                                                                                │
+   DuckDB 파일)  │  on_success / on_failure ─────────▶ Discord 웹훅(run 메타데이터·에러 딥링크)         │
+                 └───────────────────────────────────────────────────────────────────────────────┘
+                          │ (산출물을 repo에 커밋 — 얇은 단계, DAG가 push 안 함)
+                          ▼
+                   marts.duckdb + index.html  (repo)
+                       │                                   │
+          ┌────────────┘                                   └────────────┐
+   [서빙 A · 정적/항상 ON]                                    [서빙 B · 인터랙티브]
+   GitHub Pages (정적 HTML, Chart.js)                       Streamlit Cloud (Python 앱)
+   marts.duckdb 임베드 → 즉시 표시, 콜드스타트 0              marts.duckdb를 SQL로 읽음 → 필터·드릴다운
+   면접관 URL 클릭, 비용 0                                    맥북 꺼져도 OK(콜드스타트 ~30–60s)
 ```
 
-서빙은 **하이브리드**: A(정적)가 항상 보이는 기본, B(라이브)가 "진짜 스택" 어필.
+서빙은 **하이브리드**: A(정적)가 즉시·항상 보이는 폴백, B(Streamlit)가 인터랙티브 어필. **둘 다 repo에 커밋된 `marts.duckdb`(패턴 3)를 읽음** — 호스팅 DB·시크릿 불필요.
 
 ---
 
@@ -71,24 +75,26 @@
 - **의존**: `activity` 테이블.
 - **모델**(§4 상세): `dim_date`, `fact_daily_activity`(가산 측정), 비가산 지표 마트(`mart_wau`/`mart_mau`/`mart_stickiness`/`mart_retention`).
 
-### 3.4 DB Load (Gold → Postgres)
-- **무엇**: Gold 마트(수백 행)를 Postgres 테이블로 적재(라이브 BI 소스).
-- **인터페이스**: Spark JDBC write(`overwrite`). 대상 = docker-compose Postgres.
-- **의존**: Gold parquet 마트, Postgres 기동.
-- **주의**: 정적 대시보드는 Postgres에 의존하지 않음(§3.5) → DB 다운과 무관하게 정적은 항상 빌드 가능.
+### 3.4 Mart Export (Gold → DuckDB 파일, 패턴 3)
+- **무엇**: Gold 마트(수백 행)를 **임베디드 DuckDB 파일** `dashboard/marts.duckdb`로 export(서빙 A·B 공통 소스).
+- **인터페이스**: parquet 마트 → DuckDB 테이블 적재. DuckDB는 서버 없는 파일 DB라 호스팅·시크릿 불필요.
+- **의존**: Gold parquet 마트.
+- **근거(패턴 3)**: 클라우드 Streamlit은 로컬 Postgres를 못 읽음 → 마트가 작아 **DB 파일을 repo에 커밋**해 앱과 함께 배포. "Streamlit이 DB를 SQL로 읽는다" 경험은 유지하되 호스팅 DB 제거.
+- **커밋 정책**: 데모 서빙용은 **최종 마트 스냅샷 1개**를 커밋(매 일별 run마다 커밋해 git 비대화하지 않음). 일별 흐름은 DAG로 시연.
 
 ### 3.5 정적 대시보드 빌드 (서빙 A)
-- **무엇**: Gold 마트(**parquet 직접 읽기**)를 JSON으로 임베드한 **단일 자기완결 HTML** 생성 → GitHub Pages 발행.
-- **인터페이스**: `dashboard/build.py`(parquet→DuckDB/pandas→Jinja2 템플릿→`dashboard/index.html`). 차트는 Chart.js(또는 ECharts) vendored/CDN.
-- **의존**: Gold parquet(Postgres 불필요 — 빌드 시점 정적 스냅샷).
-- **언어 선택(의도)**: 정적 HTML 생성은 Python(pandas/jinja2)이 가장 단순·유지 용이(사용자 Python 배경). 파이프라인 본체는 Scala 유지 → 빌드 툴만 Python.
+- **무엇**: `marts.duckdb`를 읽어 JSON으로 임베드한 **단일 자기완결 HTML** 생성 → GitHub Pages 발행.
+- **인터페이스**: `dashboard/build.py`(duckdb→pandas→Jinja2 템플릿→`dashboard/index.html`). 차트는 Chart.js(또는 ECharts) vendored/CDN. 데이터가 HTML에 구워지므로 **열람 시 즉시 표시·콜드스타트 0**.
+- **의존**: `marts.duckdb`(빌드 시점 정적 스냅샷).
+- **언어 선택(의도)**: 대시보드는 Spark Application이 아니므로 과제 언어 제약(Scala/Java) 밖 → Python(duckdb/pandas/jinja2)이 가장 단순·유지 용이(사용자 Python 배경). 파이프라인 본체는 Scala 유지.
 - **발행**: `index.html`을 GitHub Pages 소스(예: `gh-pages` 브랜치 또는 `/docs`)로 게시. DAG는 산출물 생성까지, 게시는 얇은 단계(수동 push 또는 GitHub Action) — DAG가 git push 하지 않음.
 
-### 3.6 라이브 스택 (서빙 B, docker-compose)
-- **무엇**: `docker/docker-compose.yml`로 Postgres + Metabase(+ 선택 Airflow) 기동. Metabase가 Postgres 마트를 쿼리해 라이브 대시보드 제공.
-- **인터페이스**: `docker-compose up` → `localhost:3000`(Metabase). 대시보드 정의는 스크린샷 + (가능 시) export json 동봉.
-- **의존**: Postgres 마트(§3.4).
-- **위치**: 어필·선택. 면접관이 직접 `up` 하거나 본인이 호스팅. 미기동이어도 정적(A)으로 열람 보장.
+### 3.6 Streamlit 앱 (서빙 B, 인터랙티브)
+- **무엇**: `marts.duckdb`를 SQL로 읽어 인터랙티브 대시보드(필터·드릴다운) 제공. **Streamlit Community Cloud**에 public repo에서 배포 → 면접관 웹 열람(맥북 꺼져도 OK).
+- **인터페이스**: `dashboard/streamlit_app.py`(Python). `duckdb.connect("marts.duckdb")` 또는 `st.connection`. 차트는 Streamlit 위젯/Plotly.
+- **의존**: 커밋된 `marts.duckdb`(§3.4). 호스팅 DB·시크릿 불필요(파일 DB라 시크릿 없음).
+- **운영 노트**: 무료 티어는 유휴 시 슬립 → 클릭 시 **콜드스타트 ~30–60s**(앱 의존성 최소화로 단축). 슬립/장애 시 **정적(A)이 즉시 폴백**이라 열람 보장.
+- **언어**: Streamlit은 Python 전용(Scala 불가). 대시보드 레이어라 제약 밖.
 
 ### 3.7 Discord 알람
 - **무엇**: DAG run 성공/실패를 Discord 웹훅으로 통지(run 메타데이터·실패 시 에러 요약·Airflow run 딥링크).
@@ -99,12 +105,14 @@
 
 ## 4. Gold 데이터 모델 (스타 스키마 + 비가산 마트)
 
-**핵심 모델링 원칙(정직성)**: count-distinct 지표(WAU/MAU/리텐션)는 **비가산(non-additive)** — 일별 distinct를 합쳐 주별 distinct를 만들 수 없다. 따라서 두 부류로 나눈다.
+**원자 fact는 Silver, Gold는 집계 fact (행 수 주의)**: 원자(transaction) fact — 이벤트 1건=1행, 약 9천만 행 — 는 **Silver `activity`**가 이미 보유한다. Gold는 이를 복제하지 않고 **거친 그레인으로 미리 집계한 aggregate fact**만 둔다. 그래서 `COUNT(DISTINCT)`·`SUM`·`GROUP BY`로 9천만 행이 **하루당/주당 한 줄**로 접혀 Gold 전체가 **수백 행**이 된다(이 작음이 패턴 3 = DuckDB 파일 커밋 서빙의 근거). 유저/상품 단위 fact는 폭증하므로 제외(결정 B).
+
+**비가산성**: count-distinct 지표(WAU/MAU/리텐션)는 **비가산(non-additive)** — 일별 distinct를 합쳐 주별 distinct를 만들 수 없다. 따라서 가산 fact와 비가산 마트를 나눈다.
 
 ### 4.1 차원 + 가산 팩트 (스타)
-- **`dim_date`** — 날짜 차원. `date_key(yyyy-MM-dd)`, `iso_week(월요일)`, `month`, `dow`, `is_weekend`. SQL `sequence`로 생성.
-- **`dim_event_type`**(선택) — view/cart/purchase 등 퍼널 차원.
-- **`fact_daily_activity`** — 그레인 = `event_date × event_type`. 측정: `event_count`, `distinct_users`(그 날·타입 distinct), `distinct_sessions`, `revenue(sum price where purchase)`. **가산 측정**(event_count·revenue)은 주/월 재집계 가능.
+- **`dim_date`** — 날짜 차원. `date_key(yyyy-MM-dd)`, `iso_week(월요일)`, `month`, `dow`, `is_weekend`. SQL `sequence`로 생성. (~62행)
+- **`dim_event_type`**(선택) — view/cart/purchase 등 퍼널 차원. (~5행)
+- **`fact_daily_activity`** — **집계 fact**(원자 fact 아님). 그레인 = `event_date × event_type`(≈62×5 = **~300행**). 측정: `event_count`, `distinct_users`(그 날·타입 distinct), `distinct_sessions`, `revenue(sum price where purchase)`. **가산 측정**(event_count·revenue)은 주/월 재집계 가능. (원자 단위가 필요하면 `fact_events`≈Silver 복제 — 범위 밖)
 
 ### 4.2 비가산 지표 마트 (Silver 직접 집계)
 - **`mart_dau`** — `event_date`별 distinct user/session. (일 그레인 distinct는 fact에서 읽어도 됨)
@@ -142,10 +150,10 @@
 ## 6. 오류 처리 / 안정성
 
 - **멱등**: Gold 마트는 Silver에서 매 run 전체 재계산 후 overwrite(마트가 작아 비용 무시). Silver는 기존 파티션 멱등.
-- **순서 보장**: DAG 의존(`task1 >> task2 >> task3 >> task4 >> task5`). gate(FileSensor) 통과해야 Gold 진행.
-- **DB/라이브 분리**: 정적(A)은 parquet만 의존 → Postgres·Metabase 다운과 독립. 면접관 열람 가용성 우선.
+- **순서 보장**: DAG 의존(`task1 Silver >> task2 gate >> task3 Gold >> task4 Export >> task5 Build`). gate(FileSensor) 통과해야 Gold 진행.
+- **서빙 폴백**: 정적(A)·Streamlit(B) 모두 커밋된 `marts.duckdb`만 의존(호스팅 DB 없음). Streamlit 슬립/장애 시 정적(A)이 즉시 폴백 → 면접관 열람 가용성 우선.
 - **알람**: 실패 시 Discord로 즉시 통지(어느 task·어떤 run). 재처리는 Airflow 네이티브 Clear/Retry(멱등이라 안전).
-- **시크릿**: Discord 웹훅·DB 비밀번호는 환경변수/Airflow Variable. 커밋 금지.
+- **시크릿**: Discord 웹훅 URL은 환경변수/Airflow Variable, 커밋 금지. (DuckDB 파일 DB라 DB 비밀번호 없음 — 시크릿 표면 최소.)
 
 ---
 
@@ -165,11 +173,12 @@
 |---|---|---|---|
 | A | 일별 입력 | 월 CSV → KST 일별 분할(DailySplitter) | Airflow run-per-day 모델 전제. 데모를 실제로 일별 구동 |
 | B | Gold 모델 | 경량 스타(dim_date+fact) + 비가산 지표 마트 분리 | count-distinct 비가산성 정직 반영. dim_user 등 거대 차원은 과설계라 제외 |
-| C | Gold 저장 | parquet + Hive External Table, 그리고 Postgres 적재 | 메달리온 일관(parquet) + 라이브 BI 소스(Postgres) 양립 |
-| D | 서빙 | 하이브리드 — 정적(GitHub Pages) 기본 + 라이브(docker-compose Metabase) 어필 | 면접관 마찰 0·비용 0 보장 + "진짜 스택" 어필 동시 |
-| E | 정적 빌드 언어 | Python(pandas/jinja2) | HTML 생성 최단경로, 사용자 Python 배경. 파이프라인은 Scala 유지 |
-| F | DB | Postgres | 표준 BI 백엔드, Metabase 즉시 연동. 마트가 작아 DuckDB도 가능하나 라이브 우선 |
+| C | Gold 저장 | parquet + Hive External Table, 그리고 DuckDB 파일 export | 메달리온 일관(parquet) + 서빙용 임베디드 DB 파일(패턴 3) |
+| D | 서빙 | 하이브리드 — 정적(GitHub Pages, 즉시·항상 ON) + Streamlit Cloud(인터랙티브) | 면접관 마찰 0·비용 0·맥북 꺼져도 OK. 정적이 콜드스타트 폴백 |
+| E | 대시보드 언어 | Python(duckdb/pandas/jinja2 + Streamlit) | 대시보드는 Spark Application 아님 → 제약(Scala/Java) 밖. Streamlit은 Python 전용. 파이프라인은 Scala 유지 |
+| F | DB(서빙) | **임베디드 DuckDB 파일(repo 커밋, 패턴 3)** | 클라우드 Streamlit이 로컬 DB 못 읽음 + 마트가 작음 → 파일 DB가 무료·무호스팅·무시크릿. "SQL로 읽힘" 유지 |
 | G | 알람 | Discord 웹훅(Airflow 콜백), 커스텀 봇 미구현 | 원설계 §4.4(4) 복원, 과한 인프라 회피 |
+| H | 콜드스타트 대응 | 정적(A)을 즉시 폴백으로 상시 유지, 면접 후 단순화 | 콜드스타트는 고정 성질(통제 불가)이라 폴백 유지. 면접 후 Chart.js 제거는 선택적 cleanup |
 
 ---
 
@@ -179,17 +188,18 @@
 
 - **Phase 0 — DailySplitter**: 월→일 분할. 산출: `data/daily/` 일별 Bronze. (DAG의 전제)
 - **Phase 1 — Gold 마트**: `sql/gold/*.sql` + `dim_date`/`fact`/`mart_*` parquet + External Table. 산출: 쿼리 가능한 지표 마트(인프라 0). *여기까지만으로도 WAU·DAU 등 실측 테이블 확보.*
-- **Phase 2 — 정적 대시보드**: `dashboard/build.py` → `index.html` → GitHub Pages. 산출: 면접관 열람 URL.
-- **Phase 3 — Airflow DAG**: Bronze→Silver→Gold→publish 오케스트레이션 + Discord 콜백. 산출: 일별 흐름 시연.
-- **Phase 4 — 라이브 스택**: `docker-compose`(Postgres+Metabase) + DB Load(task4). 산출: 라이브 BI 어필.
+- **Phase 2 — Mart Export + 정적 대시보드**: `marts.duckdb` export + `dashboard/build.py` → `index.html` → GitHub Pages. 산출: 면접관 즉시 열람 URL.
+- **Phase 3 — Streamlit 앱**: `dashboard/streamlit_app.py`(DuckDB 읽기) → Streamlit Cloud 배포. 산출: 인터랙티브 웹 대시보드.
+- **Phase 4 — Airflow DAG**: Bronze→Silver→Gold→export→build 오케스트레이션 + Discord 콜백. 산출: 일별 흐름 시연(어필의 핵심).
 
-각 Phase는 갱신된 main에서 분기 → PR(base=main) → squash 머지(스택 금지, 기존 규칙).
+각 Phase는 갱신된 main에서 분기 → PR(base=main) → squash 머지(스택 금지, 기존 규칙). Phase 1까지는 인프라 0, Phase 2~3이 서빙, Phase 4가 오케스트레이션 캡스톤.
 
 ---
 
 ## 10. 범위 밖 (Out of Scope)
 
 - 커스텀 Discord 재처리 봇/버튼(원설계 방침 유지).
+- **서버형 BI 스택(Metabase/Superset + 호스팅 Postgres)** — 무료·항상 ON 요건과 안 맞아 제외. 프로덕션 확장으로 README 언급(호스팅 DB + BI 툴).
 - `dim_user`/`dim_product` 풀 스타(애드혹 제품 분석 필요 시 확장 — README 언급).
 - Iceberg/Delta, Stateful Sessionizer, 풀 dead-letter quarantine(상위 스펙의 프로덕션 확장 그대로).
 - 실시간/스트리밍.
