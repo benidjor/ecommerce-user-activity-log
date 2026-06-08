@@ -46,8 +46,8 @@
     <h2>Engagement</h2>
     <div class="note"><ul>
       <li><b>인사이트</b> — WAU(주간 활성 사용자)는 매주 100만 명 이상으로 꾸준하고, 11.11 빅세일 주에는 방문 수(세션)가 평소(약 220만)의 2배에 가까운 475만으로 치솟습니다.</li>
-      <li>Stickiness(한 달 사용자 중 하루 방문 비율)는 약 9% — 매일 오기보다 가끔 들르는 사용 패턴입니다.</li>
-      <li class="caveat">참고 — 데이터가 10·11월 두 달뿐이라 MAU·Stickiness는 점이 적습니다. 끝의 2019-12-01과 Stickiness 1.0은 시간대 변환에서 생긴 경계값입니다: 원본은 11월까지인데 UTC→KST로 9시간 밀리며 11월 30일 밤 활동 일부가 12월 1일로 넘어왔고, 12월은 이 하루뿐이라 그날의 DAU와 MAU가 같아져 비율이 1.0이 됩니다.</li>
+      <li>Stickiness(한 달 사용자 중 하루 방문 비율)는 약 9% 수준입니다.</li>
+      <li class="caveat">참고 — 데이터가 10·11월 두 달뿐이라 MAU·Stickiness는 점이 적습니다. 끝의 2019-12-01과 Stickiness 1.0은 UTC → KST 시차 변경 과정에서 생긴 변환값입니다: 원본은 11월까지인데 KST로 9시간 밀리며 11월 30일 밤 활동 일부가 12월 1일로 넘어왔고, 12월은 이 하루뿐이라 그날의 DAU와 MAU가 같아져 비율이 1.0이 됩니다. Stickiness 차트는 다른 값이 잘 보이도록 이 12-01을 빼고 그렸습니다.</li>
     </ul></div>
     <div class="grid">
       <div class="card"><h3>DAU (일별 활성 user/session)</h3><canvas id="c-dau"></canvas></div>
@@ -60,8 +60,8 @@
     <h2>Conversion</h2>
     <div class="note"><ul>
       <li><b>인사이트</b> — CVR(방문자 중 구매자 비율)은 7.9–11.9% 사이이고, 11.11 주에 11.9%로 가장 높습니다(전주보다 +3.9%p).</li>
-      <li>퍼널은 단계(조회 → 장바구니 → 구매)마다 "그 주에 한 번이라도 한 사람 수"를 각각 셉니다. 장바구니를 거치지 않고 바로 사거나 장바구니를 지난주에 한 사람이 있어, 어떤 주는 '구매한 사람'이 '장바구니에 담은 사람'보다 많아 비율이 100%를 넘기도 합니다 — 위에서 아래로 차례로 줄어드는 엄격한 단계 비교는 아닙니다.</li>
-      <li class="caveat">참고 — 퍼널 막대는 가장 최근 한 주만 보여줍니다.</li>
+      <li>퍼널 막대는 조회 → 장바구니 → 구매 각 단계를 "그 주에 그 행동을 한 사람 수"로 보여줍니다. 막대에 마우스를 올리면 단계별 전환율(직전 단계 대비)이 함께 표시됩니다.</li>
+      <li class="caveat">참고 — 단계마다 사람 수를 따로 세기 때문에, 장바구니를 건너뛰고 바로 산 사람이 많은 주에는 '구매한 사람'이 '장바구니에 담은 사람'보다 많아 전환율이 100%를 넘기도 합니다. 퍼널 막대는 가장 최근 한 주만 보여줍니다.</li>
     </ul></div>
     <div class="grid">
       <div class="card"><h3>퍼널 (최근 주: view→cart→purchase)</h3><canvas id="c-funnel"></canvas></div>
@@ -72,7 +72,7 @@
     <h2>Monetization</h2>
     <div class="note"><ul>
       <li><b>인사이트</b> — 주별 매출은 11.11 주에 약 9,700만으로 평소의 2배 가까이 오릅니다. AOV(구매 1건당 평균 결제액)는 287–318로 안정적이라, 매출 급증은 객단가가 아니라 <b>구매 건수 증가</b>(11.11 주 30만 건 이상)가 이끈 것입니다.</li>
-      <li class="caveat">참고 — 원본에 주문번호가 없어 '구매' 이벤트 1건을 주문 1건으로 보고 매출과 AOV를 계산했습니다.</li>
+      <li class="caveat">참고 — AOV는 보통 '주문 1건당 평균 결제액'인데, 원본에는 여러 상품을 한 주문으로 묶는 주문번호(order_id)가 없어 실제 주문 수를 셀 수 없습니다. 그래서 구매 이벤트 1건을 주문 1건으로 보고 계산했습니다(엄밀히는 상품 1건당 평균 결제액에 가깝습니다).</li>
     </ul></div>
     <div class="grid">
       <div class="card"><h3>주별 매출</h3><canvas id="c-rev"></canvas></div>
@@ -82,13 +82,13 @@
   <section id="section-retention">
     <h2>Retention</h2>
     <div class="note"><ul>
-      <li><b>인사이트</b> — "같은 주에 처음 활동한 사용자 묶음"이 이후 주마다 얼마나 다시 오는지를 봅니다. 첫 주(2019-09-30)에 처음 온 사용자는 1주 뒤 36% → 8주 뒤 22%로 줄지만, 11월 세일 시기에 다시 오는 비율이 잠깐 반등합니다.</li>
-      <li>왼쪽 곡선은 9주 전체가 관측되는 그 첫 묶음의 주차별 재방문율이고, 오른쪽 표는 모든 묶음을 한눈에 본 것입니다(칸이 진할수록 재방문율이 높음).</li>
-      <li class="caveat">참고 — 나중에 시작한 묶음일수록 관측된 주가 짧아 표가 삼각형 모양이 되며, 묶음끼리 직접 비교는 주의해야 합니다. '처음 활동'은 데이터 안에서의 첫 주 기준입니다(10월 이전 기록 없음).</li>
+      <li><b>인사이트</b> — 코호트(같은 주에 처음 활동한 사용자 묶음)가 이후 주마다 얼마나 다시 오는지를 봅니다. 첫 코호트(2019-09-30)는 1주 뒤 36% → 8주 뒤 22%로 줄지만, 11월 세일 시기에 다시 오는 비율이 잠깐 반등합니다.</li>
+      <li>왼쪽은 코호트별 재방문율 곡선을 겹쳐 감쇠 모양을 비교한 것이고, 오른쪽 표는 같은 값을 코호트 × 경과 주차로 펼친 것입니다(칸이 진할수록 재방문율이 높음).</li>
+      <li class="caveat">참고 — 나중에 시작한 코호트일수록 관측된 주가 짧아 곡선이 짧고 표는 삼각형 모양이 됩니다. '처음 활동'은 데이터 안에서의 첫 주 기준입니다(10월 이전 기록 없음).</li>
     </ul></div>
     <div class="grid">
-      <div class="card"><h3>첫 주(2019-09-30)에 처음 온 사용자의 주차별 재방문율</h3><canvas id="c-retention-curve"></canvas></div>
-      <div class="card"><h3>처음 온 주별 사용자 묶음의 재방문율 표</h3><div id="ret-table"></div></div>
+      <div class="card"><h3>코호트별 주차 경과에 따른 재방문율</h3><canvas id="c-retention-curve"></canvas></div>
+      <div class="card"><h3>코호트 × 경과 주차 재방문율 표</h3><div id="ret-table"></div></div>
     </div>
   </section>
 </main>
@@ -123,15 +123,33 @@ if(MARTS.mart_wau){const d=MARTS.mart_wau;
     [{label:'users',data:d.map(r=>r.wau_users)},{label:'sessions',data:d.map(r=>r.wau_sessions)}]);}
 if(MARTS.mart_mau){const d=MARTS.mart_mau;
   barChart('c-mau',d.map(r=>r.month),[{label:'MAU',data:d.map(r=>r.mau_users)}]);}
-if(MARTS.mart_stickiness){const d=MARTS.mart_stickiness;
+if(MARTS.mart_stickiness){
+  // 2019-12은 하루(12-01)뿐이라 DAU=MAU로 비율이 1.0이 되어 y축을 왜곡 → 제외.
+  //   한 달이 하루만 있으면 'DAU/그 달 MAU' 비율이 의미가 없기 때문.
+  const d=MARTS.mart_stickiness.filter(r=>!String(r.date).startsWith('2019-12'));
   lineChart('c-stick',d.map(r=>r.date),[{label:'stickiness',data:d.map(r=>r.stickiness)}]);}
 
 // Conversion
 if(MARTS.mart_funnel && MARTS.mart_funnel.length){
   // mart_funnel.sql의 ORDER BY week_start로 정렬 저장 → 마지막 행이 가장 최근 주.
   const last=MARTS.mart_funnel[MARTS.mart_funnel.length-1];
-  barChart('c-funnel',['view','cart','purchase'],
-    [{label:last.week_start,data:[last.users_view,last.users_cart,last.users_purchase]}]);}
+  const pct=v=>(v==null)?'-':(v*100).toFixed(1)+'%';
+  const v2c=last.view_to_cart, c2p=last.cart_to_purchase;          // 단계 간 전환율(SQL 산출)
+  const v2p=last.users_view?last.users_purchase/last.users_view:null; // 조회→구매(전체)
+  const el=document.getElementById('c-funnel');
+  if(el) new Chart(el,{type:'bar',
+    data:{labels:['조회','장바구니','구매'],
+      datasets:[{label:last.week_start+' 단계별 사용자 수',
+        data:[last.users_view,last.users_cart,last.users_purchase],backgroundColor:palette(0)}]},
+    options:{responsive:true,
+      plugins:{legend:{labels:{boxWidth:12,font:{size:11}}},
+        // 막대에 마우스를 올리면 단계별 전환율을 함께 표시.
+        tooltip:{callbacks:{afterLabel:function(ctx){
+          if(ctx.dataIndex===1) return '조회→장바구니 '+pct(v2c);
+          if(ctx.dataIndex===2) return ['장바구니→구매 '+pct(c2p), '조회→구매 '+pct(v2p)];
+          return '조회 대비 100%';
+        }}}},
+      scales:{x:{ticks:{font:{size:10}}},y:{ticks:{font:{size:10}}}}}});}
 if(MARTS.mart_cvr){const d=MARTS.mart_cvr; const el=document.getElementById('c-cvr');
   if(el) new Chart(el,{type:'bar',data:{labels:d.map(r=>r.week_start),datasets:[
     {type:'line',label:'CVR',data:d.map(r=>r.cvr),borderColor:palette(0),backgroundColor:palette(0),tension:.2},
@@ -142,14 +160,24 @@ if(MARTS.mart_revenue){const d=MARTS.mart_revenue;
   barChart('c-rev',d.map(r=>r.week_start),[{label:'revenue',data:d.map(r=>r.revenue)}]);
   lineChart('c-aov',d.map(r=>r.week_start),[{label:'AOV',data:d.map(r=>r.aov)}]);}
 
-// Retention 곡선: 가장 완전한 첫(최소) 코호트의 주차별 잔존율 라인.
-//   후기 코호트는 관측 주가 짧아 비교가 어려우므로, 9주 전구간이 있는 첫 코호트를 기준선으로 본다.
+// Retention 곡선: 코호트별 재방문율 곡선을 한 그래프에 겹쳐 감쇠 모양을 비교.
+//   x = 경과 주차(처음 활동 주로부터), 선 1개 = 코호트 1개. 후기 코호트는 관측 주가 짧아 선이 짧다.
 if(MARTS.mart_retention && MARTS.mart_retention.length){
   const d=MARTS.mart_retention;
-  const firstCohort=[...new Set(d.map(r=>r.cohort_week))].sort()[0];
-  const curve=d.filter(r=>r.cohort_week===firstCohort).sort((a,b)=>a.week_offset-b.week_offset);
-  lineChart('c-retention-curve',curve.map(r=>'+'+r.week_offset+'주 뒤'),
-    [{label:firstCohort+'에 처음 온 사용자 재방문율',data:curve.map(r=>r.retention_rate)}]);
+  const cohorts=[...new Set(d.map(r=>r.cohort_week))].sort();
+  const offsets=[...new Set(d.map(r=>r.week_offset))].sort((a,b)=>a-b);
+  const idx={}; d.forEach(r=>{idx[r.cohort_week+'|'+r.week_offset]=r.retention_rate;});
+  // 코호트 수가 팔레트(4색)보다 많아 HSL로 색을 고르게 분배.
+  const color=i=>'hsl('+Math.round(360*i/cohorts.length)+',65%,55%)';
+  const datasets=cohorts.map((c,i)=>({label:c,
+    data:offsets.map(o=>(idx[c+'|'+o]==null?null:idx[c+'|'+o])),
+    borderColor:color(i),backgroundColor:color(i),tension:.2,spanGaps:false}));
+  const el=document.getElementById('c-retention-curve');
+  if(el) new Chart(el,{type:'line',
+    data:{labels:offsets.map(o=>'+'+o+'주'),datasets:datasets},
+    options:{responsive:true,
+      plugins:{legend:{labels:{boxWidth:10,font:{size:9}}}},
+      scales:{x:{ticks:{font:{size:10}}},y:{ticks:{font:{size:10}}}}}});
 }
 
 // Retention: 코호트 × week_offset 삼각 테이블(셀=잔존율). Chart.js 매트릭스 플러그인 대신 CSS 음영.
@@ -158,7 +186,7 @@ if(MARTS.mart_retention && MARTS.mart_retention.length){
   const cohorts=[...new Set(d.map(r=>r.cohort_week))].sort();
   const offsets=[...new Set(d.map(r=>r.week_offset))].sort((a,b)=>a-b);
   const idx={}; d.forEach(r=>{idx[r.cohort_week+'|'+r.week_offset]=r.retention_rate;});
-  let html='<table class="ret"><tr><th>처음 온 주 \\ 경과</th>'+offsets.map(o=>'<th>+'+o+'주</th>').join('')+'</tr>';
+  let html='<table class="ret"><tr><th>코호트 \\ 경과</th>'+offsets.map(o=>'<th>+'+o+'주</th>').join('')+'</tr>';
   cohorts.forEach(c=>{
     html+='<tr><th>'+c+'</th>'+offsets.map(o=>{
       const v=idx[c+'|'+o];
