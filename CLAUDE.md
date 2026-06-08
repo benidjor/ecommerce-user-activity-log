@@ -38,6 +38,7 @@ parquet(snappy)로 적재하고, Hive External Table로 노출한 뒤 WAU(user_i
 
 ## 확장: 메달리온 BI 대시보드 (코어 완료 후 진행)
 원과제 코어(WAU+Hive External Table, Task 1~12) 완료 후, Gold 마트·Airflow 일별 오케스트레이션·BI 대시보드·Discord 알람을 얹는다(스펙 2026-06-08, Phase 0~4).
+- **진행 상태(2026-06-09)**: Phase 1(Gold 마트)·Phase 2(Mart Export+정적 대시보드) 완료·배포 — 라이브 <https://benidjor.github.io/ecommerce-user-activity-log/>. 지표 정의·데이터 경계는 `docs/runbook/dashboard.md` §6. 다음 = Phase 3(Streamlit) → Phase 4(Airflow+Discord). Phase 0(DailySplitter)은 Phase 4 전제라 미진행.
 - **요구사항 가드레일(불변)**: "Hive External Table" 요구 = **Silver `activity`**. DuckDB는 Gold 서빙 사본(Hive 대체 아님). 제출용 WAU는 Hive `activity`(`sql/wau.sql`) 정본. **Spark Application은 전부 Scala**(파이프라인·DailySplitter·GoldMarts); 대시보드(정적/Streamlit)·Airflow·DuckDB export는 Spark 외라 **Python 허용**(README에 경계 명시).
 - **서빙**: 정적 HTML(GitHub Pages) + Streamlit Cloud, 둘 다 repo 커밋된 DuckDB 파일(패턴3) 읽기. Metabase/Postgres는 무료·항상ON 불충족이라 범위 밖.
 - **Gold 모델**: 경량 스타(`dim_date`+집계 fact) + count-distinct 비가산 지표 마트. **원자 fact는 Silver(약 9천만 행), Gold는 집계(수백 행)**. SQL은 `sql/gold/*.sql`(SoT) + 얇은 `GoldMarts` 러너(WAU의 .scala/.sql 이중화 반복 안 함).
