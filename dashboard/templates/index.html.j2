@@ -14,7 +14,13 @@
  main{max-width:1100px;margin:0 auto;padding:24px}
  section{background:#fff;border:1px solid #e6e6ee;border-radius:10px;padding:18px 20px;margin-bottom:22px}
  section h2{margin:0 0 4px;font-size:16px}
- section .note{margin:0 0 14px;font-size:12px;color:#7a7a8c}
+ section .note{margin:0 0 14px;font-size:12.5px;color:#5f5f70}
+ section .note ul{margin:0;padding-left:18px}
+ section .note li{margin:4px 0;line-height:1.55}
+ section .note .caveat{color:#9a9aac}
+ header .proc{margin:10px 0 0;font-size:13px;color:#cdcdda}
+ header .proc ul{margin:5px 0 0;padding-left:18px}
+ header .proc li{margin:3px 0;line-height:1.55}
  .grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
  .card{min-width:0}
  .card h3{margin:0 0 8px;font-size:13px;color:#444}
@@ -28,12 +34,21 @@
 <header>
   <h1>이커머스 Activity 대시보드 — Gold 마트</h1>
   <p>Silver activity → Gold 마트(parquet) → marts.duckdb. 수치는 실제 집계 결과(2019 Oct/Nov).</p>
-  <p><b>처리 방식</b> — 원본 UTC 이벤트를 KST로 1회 변환해 <b>KST 벽시계 날짜(event_date) 기준 일별 파티션</b>으로 적재. 동일 user_id 내 직전 이벤트와 간격이 <b>5분(300초) 이상이면 세션 종료</b>로 보고 새 세션 시작 — session_id = user_id + "_" + unix(세션 시작시각)로 결정적 생성.</p>
+  <div class="proc"><b>처리 방식</b>
+    <ul>
+      <li>원본은 UTC 시각 — 이를 한국시간(KST)으로 한 번 변환해, <b>KST 날짜(event_date) 기준으로 하루치씩 나눠 저장</b>합니다.</li>
+      <li>같은 user_id 안에서 직전 행동과 <b>5분(300초) 넘게 간격</b>이 벌어지면 새 방문(세션)으로 끊고, 세션 ID는 <code>user_id + "_" + 세션 시작시각</code>으로 항상 같은 값이 나오게 만듭니다.</li>
+    </ul>
+  </div>
 </header>
 <main>
   <section id="section-engagement">
     <h2>Engagement</h2>
-    <p class="note"><b>인사이트</b> — WAU는 주 100만+ 유저로 안정적이고, 11.11 빅세일 주에 세션이 평시(~2.2M)의 약 2배(4.75M)로 급증. Stickiness(DAU/MAU) 평균 ~9%로 방문 빈도는 낮은 편(탐색형 커머스 특성). <i>주의: MAU·Stickiness는 2개월 표본이라 얇고, 12-01 점·Stickiness 1.0은 KST 경계 부분구간 아티팩트.</i></p>
+    <div class="note"><ul>
+      <li><b>인사이트</b> — WAU(주간 활성 사용자)는 매주 100만 명 이상으로 꾸준하고, 11.11 빅세일 주에는 방문 수(세션)가 평소(약 220만)의 2배에 가까운 475만으로 치솟습니다.</li>
+      <li>Stickiness(한 달 사용자 중 하루 방문 비율)는 약 9% — 매일 오기보다 가끔 들르는 사용 패턴입니다.</li>
+      <li class="caveat">참고 — 데이터가 10·11월 두 달뿐이라 MAU·Stickiness는 점이 적습니다. 끝의 2019-12-01과 Stickiness 1.0은 시간대 변환에서 생긴 경계값입니다: 원본은 11월까지인데 UTC→KST로 9시간 밀리며 11월 30일 밤 활동 일부가 12월 1일로 넘어왔고, 12월은 이 하루뿐이라 그날의 DAU와 MAU가 같아져 비율이 1.0이 됩니다.</li>
+    </ul></div>
     <div class="grid">
       <div class="card"><h3>DAU (일별 활성 user/session)</h3><canvas id="c-dau"></canvas></div>
       <div class="card"><h3>WAU (주별 활성 user/session)</h3><canvas id="c-wau"></canvas></div>
@@ -43,7 +58,11 @@
   </section>
   <section id="section-conversion">
     <h2>Conversion</h2>
-    <p class="note"><b>인사이트</b> — CVR(구매자/방문자)은 7.9–11.9% 범위, 11.11 주 최고 11.9%(WoW +3.9%p). 퍼널은 단계별 <b>독립 distinct 집합</b>이라 'cart'가 희소한 주엔 구매자 &gt; 장바구니(전환율 &gt;100%)로 보일 수 있음 — 엄격한 드릴다운이 아님. <i>퍼널 차트는 가장 최근 주 기준(주별 distinct는 비가산이라 합산 안 함).</i></p>
+    <div class="note"><ul>
+      <li><b>인사이트</b> — CVR(방문자 중 구매자 비율)은 7.9–11.9% 사이이고, 11.11 주에 11.9%로 가장 높습니다(전주보다 +3.9%p).</li>
+      <li>퍼널은 단계(조회 → 장바구니 → 구매)마다 "그 주에 한 번이라도 한 사람 수"를 각각 셉니다. 장바구니를 거치지 않고 바로 사거나 장바구니를 지난주에 한 사람이 있어, 어떤 주는 '구매한 사람'이 '장바구니에 담은 사람'보다 많아 비율이 100%를 넘기도 합니다 — 위에서 아래로 차례로 줄어드는 엄격한 단계 비교는 아닙니다.</li>
+      <li class="caveat">참고 — 퍼널 막대는 가장 최근 한 주만 보여줍니다.</li>
+    </ul></div>
     <div class="grid">
       <div class="card"><h3>퍼널 (최근 주: view→cart→purchase)</h3><canvas id="c-funnel"></canvas></div>
       <div class="card"><h3>주별 CVR + 전주 대비(WoW)</h3><canvas id="c-cvr"></canvas></div>
@@ -51,7 +70,10 @@
   </section>
   <section id="section-monetization">
     <h2>Monetization</h2>
-    <p class="note"><b>인사이트</b> — 주별 매출은 11.11 주 ~97M로 평시의 약 2배. AOV는 287–318로 안정적 — 매출 급증은 객단가가 아니라 <b>구매 건수 증가</b>(11.11 주 30만+ 건)가 주도. <i>매출 = 구매 이벤트 price 합. order_id 없어 구매 이벤트를 주문 proxy로 사용. AOV = 매출/구매건수.</i></p>
+    <div class="note"><ul>
+      <li><b>인사이트</b> — 주별 매출은 11.11 주에 약 9,700만으로 평소의 2배 가까이 오릅니다. AOV(구매 1건당 평균 결제액)는 287–318로 안정적이라, 매출 급증은 객단가가 아니라 <b>구매 건수 증가</b>(11.11 주 30만 건 이상)가 이끈 것입니다.</li>
+      <li class="caveat">참고 — 원본에 주문번호가 없어 '구매' 이벤트 1건을 주문 1건으로 보고 매출과 AOV를 계산했습니다.</li>
+    </ul></div>
     <div class="grid">
       <div class="card"><h3>주별 매출</h3><canvas id="c-rev"></canvas></div>
       <div class="card"><h3>주별 AOV</h3><canvas id="c-aov"></canvas></div>
@@ -59,10 +81,14 @@
   </section>
   <section id="section-retention">
     <h2>Retention</h2>
-    <p class="note"><b>인사이트</b> — 가장 완전한 첫 코호트(09-30)는 1주차 36% → 8주차 22%로 감쇠하되, 11월 세일기에 잔존이 일시 반등. 왼쪽 곡선은 그 첫 코호트 기준, 오른쪽 표는 전 코호트(셀=잔존율, 색이 진할수록 높음). <i>주의: 후기 코호트일수록 관측 주가 짧아(삼각형) 직접 비교는 주의. '신규'는 데이터 내 첫 활동 주로 정의(Oct 이전 이력 없음).</i></p>
+    <div class="note"><ul>
+      <li><b>인사이트</b> — "같은 주에 처음 활동한 사용자 묶음"이 이후 주마다 얼마나 다시 오는지를 봅니다. 첫 주(2019-09-30)에 처음 온 사용자는 1주 뒤 36% → 8주 뒤 22%로 줄지만, 11월 세일 시기에 다시 오는 비율이 잠깐 반등합니다.</li>
+      <li>왼쪽 곡선은 9주 전체가 관측되는 그 첫 묶음의 주차별 재방문율이고, 오른쪽 표는 모든 묶음을 한눈에 본 것입니다(칸이 진할수록 재방문율이 높음).</li>
+      <li class="caveat">참고 — 나중에 시작한 묶음일수록 관측된 주가 짧아 표가 삼각형 모양이 되며, 묶음끼리 직접 비교는 주의해야 합니다. '처음 활동'은 데이터 안에서의 첫 주 기준입니다(10월 이전 기록 없음).</li>
+    </ul></div>
     <div class="grid">
-      <div class="card"><h3>기준 코호트(09-30) 주차별 잔존 곡선</h3><canvas id="c-retention-curve"></canvas></div>
-      <div class="card"><h3>주차 코호트 삼각표</h3><div id="ret-table"></div></div>
+      <div class="card"><h3>첫 주(2019-09-30)에 처음 온 사용자의 주차별 재방문율</h3><canvas id="c-retention-curve"></canvas></div>
+      <div class="card"><h3>처음 온 주별 사용자 묶음의 재방문율 표</h3><div id="ret-table"></div></div>
     </div>
   </section>
 </main>
@@ -122,8 +148,8 @@ if(MARTS.mart_retention && MARTS.mart_retention.length){
   const d=MARTS.mart_retention;
   const firstCohort=[...new Set(d.map(r=>r.cohort_week))].sort()[0];
   const curve=d.filter(r=>r.cohort_week===firstCohort).sort((a,b)=>a.week_offset-b.week_offset);
-  lineChart('c-retention-curve',curve.map(r=>'+'+r.week_offset+'주'),
-    [{label:firstCohort+' 코호트 잔존율',data:curve.map(r=>r.retention_rate)}]);
+  lineChart('c-retention-curve',curve.map(r=>'+'+r.week_offset+'주 뒤'),
+    [{label:firstCohort+'에 처음 온 사용자 재방문율',data:curve.map(r=>r.retention_rate)}]);
 }
 
 // Retention: 코호트 × week_offset 삼각 테이블(셀=잔존율). Chart.js 매트릭스 플러그인 대신 CSS 음영.
@@ -132,7 +158,7 @@ if(MARTS.mart_retention && MARTS.mart_retention.length){
   const cohorts=[...new Set(d.map(r=>r.cohort_week))].sort();
   const offsets=[...new Set(d.map(r=>r.week_offset))].sort((a,b)=>a-b);
   const idx={}; d.forEach(r=>{idx[r.cohort_week+'|'+r.week_offset]=r.retention_rate;});
-  let html='<table class="ret"><tr><th>코호트 / 주차</th>'+offsets.map(o=>'<th>+'+o+'</th>').join('')+'</tr>';
+  let html='<table class="ret"><tr><th>처음 온 주 \\ 경과</th>'+offsets.map(o=>'<th>+'+o+'주</th>').join('')+'</tr>';
   cohorts.forEach(c=>{
     html+='<tr><th>'+c+'</th>'+offsets.map(o=>{
       const v=idx[c+'|'+o];
