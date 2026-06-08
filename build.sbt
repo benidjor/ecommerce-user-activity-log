@@ -14,7 +14,9 @@ val jvm17Opens = Seq(
   "--add-opens=java.base/java.util=ALL-UNNAMED",
   "--add-opens=java.base/java.util.concurrent=ALL-UNNAMED",
   "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED",
-  "--add-opens=java.base/sun.security.action=ALL-UNNAMED"
+  "--add-opens=java.base/sun.security.action=ALL-UNNAMED",
+  // date 타입 컬럼 collect 시 java.sql.Date 변환에 필요(Spark의 ZoneInfo 접근)
+  "--add-opens=java.base/sun.util.calendar=ALL-UNNAMED"
 )
 
 lazy val root = (project in file("."))
