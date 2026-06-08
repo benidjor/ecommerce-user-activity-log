@@ -270,3 +270,91 @@ export/build/CI/테스트는 **Python**(대시보드 레이어 — Spark Applica
 ### 11.6 Phase 2 범위 밖
 
 Streamlit 앱 → Phase 3. Airflow DAG/Discord → Phase 4. 이번 회차는 export + 정적 서빙(Pages)까지만.
+
+---
+
+## 12. Phase 0 + Phase 4 결정 보강 (DailySplitter + Airflow + Discord — 2026-06-09 브레인스토밍)
+
+§2 아키텍처·§3.1 DailySplitter·§3.2 Silver·§3.7 Discord·§6 복구·§8 결정로그를 구현하기 직전, 스펙이 열어둔 **실행·시연** 갈림길을 좁힌 결정이다. 본 §12는 그 증분이며 충돌 없이 계승한다. (§11 Phase 2 보강과 동일한 형식 — 아키텍처는 위 절들에 이미 있어 새 스펙 파일 대신 보강으로 둔다.)
+
+### 12.0 Phase 3(Streamlit) 보류
+
+Phase 3 Streamlit은 **보류·선택**으로 둔다. 사용자가 Streamlit을 원했던 세 목적 — ① 백필 시 데이터 유동성, ② 실무 DE 어필, ③ 배치 장애·복구 가시화 — 을 검토한 결과 **셋 다 Airflow UI + Discord(Phase 4)가 푸는 문제**다.
+- 정적·Streamlit 둘 다 **같은 커밋 스냅샷 `marts.duckdb`** 를 읽어 "유동성" 차이가 없다(§3.4가 이미 "일별 흐름은 DAG로 시연"으로 결정).
+- 장애 정보(run 상태·`_SUCCESS`·신선도)는 마트에 없어 KPI 대시보드가 보여줄 수 없다 → Airflow UI/Discord의 몫.
+- 정적 대시보드가 이미 BI 서빙을 충족하고, Streamlit은 라인 단위 설명 표면만 늘린다.
+
+→ Streamlit은 "정말 인터랙티브 탐색이 필요할 때 붙이는 선택적 폴리시"로 남기고, **Phase 4(전제 Phase 0)로 전환**한다.
+
+### 12.1 확정 결정 (이번 회차)
+
+| # | 결정 | 선택 | 근거 |
+|---|---|---|---|
+| P4-1 | 시연 매체 | **README 시연 자료(스크린샷/GIF) 주 + 로컬 라이브 보조** | Airflow UI는 로컬 실행 중에만 보임(항상-ON 아님). 정적 대시보드처럼 언제든 확인되는 매체가 필요 → README에 일별 catchup 그래프·장애 2모드·Discord 캡처를 박음 |
+| P4-2 | Spark 호출 연산자 | **BashOperator + spark-submit** | DAG 명령 = 터미널/런북 명령과 글자 그대로 동일(라인 단위 설명 용이). `apache-airflow-providers-apache-spark`·Spark Connection 불필요. JDK 21 `--add-opens` env를 인라인 제어. 로컬 `local[*]` 단일머신엔 SparkSubmitOperator의 클러스터/Connection 이점이 발동 안 함 → 래퍼는 과설계 |
+| P4-3 | Airflow 런타임 | **standalone + venv**(SQLite + SequentialExecutor, `airflow standalone`) | 단일 명령 구동·최소 설치·재현 쉬움. DAG가 순차 체인 + 무거운 Spark 잡 하나씩이라 **병렬성(LocalExecutor/Postgres·Docker의 이점)이 무의미**. SQLite/Sequential엔 동시쓰기 없어 락 이슈도 없음. 공식 "개발용" 한계는 README에 명시(프로덕션=LocalExecutor+Postgres→Celery/K8s 확장) |
+| P4-4 | 장애 시연 | **2모드** — (a) 자동 복구 + (b) 수동 복구 | "자동 vs 수동 복구"라는 개념 공간을 중복 없이 덮음. 요구사항은 복구 *장치 구현*이지 *전 장애 연출*이 아님 → 나머지 장애 유형은 장치만 구현하고 README 글로 커버(과설계 회피) |
+| P4-5 | 결함 주입 위치 | **핵심 변환 코드 밖에 격리**(데모 토글은 DAG/데모 영역에만) | 운영 비즈니스 로직(Silver/Gold)에 `if VAR: raise`를 박지 않음(냄새 회피). 토글은 명확히 라벨된 데모 스위치 |
+| P4-6 | 백필 경계 | `@daily`·`catchup=True`·`start_date=2019-10-01`·**`end_date=2019-12-01`** | catchup이 backfill을 겸함(§9). end_date로 데이터 창에 가둬 2026까지 ~2,300 빈 run 폭주 방지 |
+| P4-7 | 데모 구동 범위 | **소형 대표 구간 2019-10-01~10-07(7일)** | 전체 마트는 배치 backfill로 이미 존재. 데모 목적은 *일별 흐름 시연* → 7일이면 catchup 그래프·장애 2모드 증명에 충분. "전체는 동일 DAG의 start/end 확장"을 README 명시. 노트북 부담·스크린샷 장황 회피 |
+
+### 12.2 DAG `activity_daily` 구성 (§2 구체화)
+
+순차 체인 + Discord 콜백. 모든 task는 `retries`/`retry_delay` 보유(일시적 장애 자동 흡수).
+
+```
+task1 Silver   BashOperator: spark-submit --class com.activitylog.Main
+                 --mode incremental --run-date {{ds}}
+                 --input data/daily/event_date={{ds}}/ (+ 전날 lookback) --output output/activity
+   >> task1b 파티션 등록  spark-sql: MSCK REPAIR TABLE activity (또는 ALTER TABLE ADD PARTITION)
+   >> task2 gate         FileSensor: output/activity/event_date={{ds}}/_SUCCESS
+   >> task3 Gold         BashOperator: spark-submit --class com.activitylog.GoldMarts
+                            --sql-dir sql/gold --output output/gold
+   >> task4 Export       BashOperator: dashboard/.venv/bin/python dashboard/export_duckdb.py
+   >> task5 Build        BashOperator: dashboard/.venv/bin/python dashboard/build.py
+on_retry / on_failure / on_success → Discord 웹훅
+```
+
+- **구현 시 주의(계획서에서 해결할 디테일)**:
+  - **`activity` 파티션 가시성**: GoldMarts는 `activity` External Table을 읽으므로, Silver가 새 파티션을 쓴 뒤 메타스토어가 인식하도록 **`MSCK REPAIR TABLE` 또는 `ADD PARTITION`** 단계가 task1과 Gold 사이에 필요(task1b).
+  - **임베디드 Derby 메타스토어 공유**: spark-submit·spark-sql 각 호출이 같은 `metastore_db`/warehouse를 보도록 **작업 디렉토리·`--conf spark.sql.warehouse.dir` 일관**(Derby 단일 접속 — 동시 접근 회피, SequentialExecutor라 자연 충족).
+  - **env**: `JAVA_HOME`=brew JDK 21 + `--add-opens=java.base/java.nio=...,java.base/sun.nio.ch=...`(기존 런북과 동일). WAU 등 고카디널리티 단계는 `--driver-memory` 상향.
+- **DAG는 산출물 생성까지, git push 안 함**(§3.5·§11 계승). 서빙용 `marts.duckdb`는 최종 스냅샷 1개 수동 커밋.
+
+### 12.3 장애 시연 2모드 (요구사항 "배치 장애시 복구 장치" 실증)
+
+복구 장치는 전부 구현(검증 게이트·자동 retry·멱등 overwrite+staging→rename·`_SUCCESS`·FileSensor·DAG 의존). 데모는 그중 개념적으로 가장 다른 두 모드만 연출한다.
+
+- **(a) 자동 복구** — 격리된 데모 토글(Airflow Variable `DEMO_FAIL_DATE`)이 특정 날짜 task를 **첫 시도만** 실패시킴 → `retries`로 자동 재시도 → 성공. Discord: `on_retry`(🔄) → `on_success`(✅). *일시적 인프라 장애를 사람 개입 없이 자가 치유하는 모습.* 결정적·반복가능.
+- **(b) 수동 복구** — 데모 날짜에 빈/손상 입력 → **검증 게이트 단언 실패**(예: 출력 행수 0) → retry 소진 최종 실패 → `on_failure`(🚨 에러 요약 + Airflow run 링크) → 입력 고치고 **Clear**(멱등 overwrite로 안전 재처리) → `on_success`(✅). *방어벽이 나쁜 데이터를 막고 멱등 복구하는 모습.* 요구사항 직격.
+
+Airflow 콜백 의미: `on_retry`=실패+retry 남음(매번), `on_failure`=retry 소진 최종 실패, `on_success`=성공.
+
+### 12.4 컴포넌트 (산출 파일)
+
+| 파일 | 책임 | 의존 |
+|---|---|---|
+| `src/main/scala/com/activitylog/DailySplitter.scala` (+ Spec) | 월 CSV → KST `event_date` partitionBy → `data/daily/` (Phase 0) | `Schema.Raw`·`TimeUtils` 재사용 |
+| `airflow/dags/activity_daily.py` | DAG 정의(task1~5 + 게이트 + retry + catchup + start/end) | spark-submit jar·`sql/gold`·`dashboard/*.py` |
+| `airflow/callbacks/discord.py` | on_retry/on_failure/on_success → Discord 웹훅(run 메타·에러·링크) | Airflow Variable/env(웹훅 URL, 미커밋) |
+| `airflow/requirements.txt` | `apache-airflow==2.x` + 공식 constraint | — |
+| `docs/runbook/airflow.md` | venv·`airflow standalone` 셋업 + 백필 구동 + 장애 2모드 재현 절차 | — |
+| README | 사용 도구·언어 경계·복구 장치·장애 지형도·Airflow 한계 갱신 | — |
+
+### 12.5 테스트 (TDD — 수치 단언 금지)
+
+- **DailySplitter**: 소량 픽스처로 UTC 자정 전후 행이 올바른 KST 날짜 폴더로 가는지 경계 단위 테스트.
+- **DAG**: import 무오류 + 의존 그래프 형태(`airflow dags test activity_daily 2019-10-01` 1일 dry-run). Discord 콜백·데모 토글은 작은 단위 테스트(웹훅은 모킹).
+- **수치는 실제 구동 결과로만** — 시연은 실제 catchup·장애 2모드 스크린샷(불변 규칙 §7 계승).
+
+### 12.6 언어 경계 (README 명시)
+
+DailySplitter는 **Scala**(Spark Application — 결정 §8). DAG·콜백·Airflow 셋업은 **Python**(오케스트레이션 레이어 — Spark Application 아님, 결정 E 계승). task4/task5는 Phase 2 Python 스크립트 재사용. 모든 코드에 한국어 설명 주석(사용자 Python 배경).
+
+### 12.7 범위 밖
+
+- Streamlit(Phase 3 — 보류·선택).
+- 커스텀 Discord 재처리 봇/버튼(§3.7·§10 방침).
+- Docker/Postgres·LocalExecutor 런타임(병렬 불필요 → 과설계).
+- OOM·데이터 스큐·셔플 등 **튜닝성 장애의 연출**(장치/설명은 README에 두되 데모는 안 함).
+- 실시간/스트리밍.
