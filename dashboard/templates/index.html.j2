@@ -28,11 +28,12 @@
 <header>
   <h1>이커머스 Activity 대시보드 — Gold 마트</h1>
   <p>Silver activity → Gold 마트(parquet) → marts.duckdb. 수치는 실제 집계 결과(2019 Oct/Nov).</p>
+  <p><b>처리 방식</b> — 원본 UTC 이벤트를 KST로 1회 변환해 <b>KST 벽시계 날짜(event_date) 기준 일별 파티션</b>으로 적재. 동일 user_id 내 직전 이벤트와 간격이 <b>5분(300초) 이상이면 세션 종료</b>로 보고 새 세션 시작 — session_id = user_id + "_" + unix(세션 시작시각)로 결정적 생성.</p>
 </header>
 <main>
   <section id="section-engagement">
     <h2>Engagement</h2>
-    <p class="note">DAU·WAU·MAU·Stickiness. MAU·Stickiness는 데이터 2개월이라 표본이 얇음(점 2~3개).</p>
+    <p class="note"><b>인사이트</b> — WAU는 주 100만+ 유저로 안정적이고, 11.11 빅세일 주에 세션이 평시(~2.2M)의 약 2배(4.75M)로 급증. Stickiness(DAU/MAU) 평균 ~9%로 방문 빈도는 낮은 편(탐색형 커머스 특성). <i>주의: MAU·Stickiness는 2개월 표본이라 얇고, 12-01 점·Stickiness 1.0은 KST 경계 부분구간 아티팩트.</i></p>
     <div class="grid">
       <div class="card"><h3>DAU (일별 활성 user/session)</h3><canvas id="c-dau"></canvas></div>
       <div class="card"><h3>WAU (주별 활성 user/session)</h3><canvas id="c-wau"></canvas></div>
@@ -42,7 +43,7 @@
   </section>
   <section id="section-conversion">
     <h2>Conversion</h2>
-    <p class="note">퍼널은 가장 최근 주 기준(주별 distinct는 비가산이라 합산 안 함). CVR = 구매자/방문자.</p>
+    <p class="note"><b>인사이트</b> — CVR(구매자/방문자)은 7.9–11.9% 범위, 11.11 주 최고 11.9%(WoW +3.9%p). 퍼널은 단계별 <b>독립 distinct 집합</b>이라 'cart'가 희소한 주엔 구매자 &gt; 장바구니(전환율 &gt;100%)로 보일 수 있음 — 엄격한 드릴다운이 아님. <i>퍼널 차트는 가장 최근 주 기준(주별 distinct는 비가산이라 합산 안 함).</i></p>
     <div class="grid">
       <div class="card"><h3>퍼널 (최근 주: view→cart→purchase)</h3><canvas id="c-funnel"></canvas></div>
       <div class="card"><h3>주별 CVR + 전주 대비(WoW)</h3><canvas id="c-cvr"></canvas></div>
@@ -50,7 +51,7 @@
   </section>
   <section id="section-monetization">
     <h2>Monetization</h2>
-    <p class="note">매출 = 구매 이벤트 price 합. order_id 없어 구매 이벤트를 주문 proxy로 사용. AOV = 매출/구매건수.</p>
+    <p class="note"><b>인사이트</b> — 주별 매출은 11.11 주 ~97M로 평시의 약 2배. AOV는 287–318로 안정적 — 매출 급증은 객단가가 아니라 <b>구매 건수 증가</b>(11.11 주 30만+ 건)가 주도. <i>매출 = 구매 이벤트 price 합. order_id 없어 구매 이벤트를 주문 proxy로 사용. AOV = 매출/구매건수.</i></p>
     <div class="grid">
       <div class="card"><h3>주별 매출</h3><canvas id="c-rev"></canvas></div>
       <div class="card"><h3>주별 AOV</h3><canvas id="c-aov"></canvas></div>
@@ -58,8 +59,11 @@
   </section>
   <section id="section-retention">
     <h2>Retention</h2>
-    <p class="note">주차 코호트(데이터 내 첫 활동 주). 2개월(9주)이라 작은 삼각형. 색이 진할수록 잔존율 높음.</p>
-    <div id="ret-table"></div>
+    <p class="note"><b>인사이트</b> — 가장 완전한 첫 코호트(09-30)는 1주차 36% → 8주차 22%로 감쇠하되, 11월 세일기에 잔존이 일시 반등. 왼쪽 곡선은 그 첫 코호트 기준, 오른쪽 표는 전 코호트(셀=잔존율, 색이 진할수록 높음). <i>주의: 후기 코호트일수록 관측 주가 짧아(삼각형) 직접 비교는 주의. '신규'는 데이터 내 첫 활동 주로 정의(Oct 이전 이력 없음).</i></p>
+    <div class="grid">
+      <div class="card"><h3>기준 코호트(09-30) 주차별 잔존 곡선</h3><canvas id="c-retention-curve"></canvas></div>
+      <div class="card"><h3>주차 코호트 삼각표</h3><div id="ret-table"></div></div>
+    </div>
   </section>
 </main>
 <footer>생성: build.py(duckdb→pandas→Jinja2). 차트: Chart.js CDN. 데이터는 이 페이지에 임베드됨.</footer>
@@ -111,6 +115,16 @@ if(MARTS.mart_cvr){const d=MARTS.mart_cvr; const el=document.getElementById('c-c
 if(MARTS.mart_revenue){const d=MARTS.mart_revenue;
   barChart('c-rev',d.map(r=>r.week_start),[{label:'revenue',data:d.map(r=>r.revenue)}]);
   lineChart('c-aov',d.map(r=>r.week_start),[{label:'AOV',data:d.map(r=>r.aov)}]);}
+
+// Retention 곡선: 가장 완전한 첫(최소) 코호트의 주차별 잔존율 라인.
+//   후기 코호트는 관측 주가 짧아 비교가 어려우므로, 9주 전구간이 있는 첫 코호트를 기준선으로 본다.
+if(MARTS.mart_retention && MARTS.mart_retention.length){
+  const d=MARTS.mart_retention;
+  const firstCohort=[...new Set(d.map(r=>r.cohort_week))].sort()[0];
+  const curve=d.filter(r=>r.cohort_week===firstCohort).sort((a,b)=>a.week_offset-b.week_offset);
+  lineChart('c-retention-curve',curve.map(r=>'+'+r.week_offset+'주'),
+    [{label:firstCohort+' 코호트 잔존율',data:curve.map(r=>r.retention_rate)}]);
+}
 
 // Retention: 코호트 × week_offset 삼각 테이블(셀=잔존율). Chart.js 매트릭스 플러그인 대신 CSS 음영.
 (function(){
