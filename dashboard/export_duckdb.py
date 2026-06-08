@@ -1,5 +1,7 @@
 # export_duckdb: Gold parquet 마트(output/gold/<table>/*.parquet)를 읽어
 # 서빙용 임베디드 DB 파일 dashboard/marts.duckdb로 적재한다(마트당 테이블 1개).
+# output/gold 하위 전체(dim_date·fact_daily_activity·mart_*)를 적재한다 —
+# 정적 대시보드는 mart_*만 쓰지만, 서빙 완전성·Phase 3 Streamlit 재사용을 위해 Gold 전부 보존.
 # CI는 Spark/parquet 없이 이 커밋된 .duckdb만 읽으므로, 이 스크립트는
 # 데이터 갱신 시 로컬에서 1회 실행한다(Phase 4 Airflow DAG가 이를 흡수 예정).
 import pathlib

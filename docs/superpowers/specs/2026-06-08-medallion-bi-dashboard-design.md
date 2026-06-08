@@ -228,7 +228,7 @@ output/gold/*/*.parquet  (Phase 1 산출 — Spark/Scala가 생성)
 dashboard/marts.duckdb   ← repo 커밋(패턴3·결정 F, 수백 행). Phase 3 Streamlit과 공유하는 단일 서빙 소스
         │  ② build.py  (로컬 & CI, duckdb→pandas→Jinja2)
         ▼
-dashboard/index.html     ← 생성물(gitignore). 마트 데이터는 JSON으로 임베드, Chart.js는 CDN
+dashboard/site/index.html ← 생성물(gitignore). 마트 데이터는 JSON으로 임베드, Chart.js는 CDN
         │  ③ .github/workflows/pages.yml  (main push 시 build→deploy)
         ▼
 GitHub Pages URL         ← 면접관 즉시 열람, 콜드스타트 0
@@ -251,7 +251,7 @@ GitHub Pages URL         ← 면접관 즉시 열람, 콜드스타트 0
 | 파일 | 책임 | 의존 |
 |---|---|---|
 | `dashboard/export_duckdb.py` | `output/gold/*` parquet → `marts.duckdb`(마트당 1테이블) | duckdb |
-| `dashboard/build.py` | `marts.duckdb` → pandas → Jinja2 → `index.html`(마트 JSON 임베드) | duckdb·pandas·jinja2 |
+| `dashboard/build.py` | `marts.duckdb` → pandas → Jinja2 → `site/index.html`(마트 JSON 임베드, Pages 아티팩트용 전용 폴더) | duckdb·pandas·jinja2 |
 | `dashboard/templates/index.html.j2` | KPI 그룹(§5: Engagement/Conversion/Monetization/Retention) 레이아웃 + Chart.js(CDN) | — |
 | `dashboard/requirements.txt` | duckdb·pandas·jinja2·pytest 버전 고정 | — |
 | `.github/workflows/pages.yml` | main push → pip install → build.py → upload-pages-artifact → deploy-pages | `marts.duckdb`(커밋) |

@@ -1,5 +1,7 @@
 # build.py 단위 테스트. 합성 marts.duckdb 픽스처로 (1) 날짜→문자열 직렬화
 # (2) NULL→None (3) 마트별 행수 일치 를 검증(특정 수치는 단언 안 함).
+# 실행 전제: repo 루트에서 `pytest dashboard/tests`(conftest가 dashboard/를 import path에
+# 추가하고, render 테스트의 템플릿 경로는 루트 기준 상대경로다).
 import json
 import re
 
