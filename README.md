@@ -113,6 +113,8 @@ FROM activity GROUP BY 1 ORDER BY 1;
 - **세션화 로직 표현력** — 윈도우 함수(`lag`/`sum over`)·UDF 등 핵심 로직을 타입 안전하게 표현한다.
 - **대안 비교** — Java도 가능하나 Spark 관용 표현·간결성에서 Scala 우위. PySpark는 과제 요구상 제외.
 
+> **대시보드 레이어는 Python(경계 명시).** 파이프라인 본체·`GoldMarts` 등 **Spark Application은 Scala**로 유지한다. Phase 2의 마트 export(`dashboard/export_duckdb.py`)·정적 빌드(`dashboard/build.py`)·CI는 Spark 외 서빙/오케스트레이션이라 Python(duckdb/pandas/jinja2)을 쓴다. 제출용 WAU 정본은 여전히 Hive `activity`의 `sql/wau.sql`이며, 대시보드의 `marts.duckdb`는 Gold 서빙 사본이다(Hive 대체 아님).
+
 ---
 
 ## 5. 설계 결정 요약 (결정 로그)
@@ -144,6 +146,7 @@ FROM activity GROUP BY 1 ORDER BY 1;
 - **구현** — `superpowers:subagent-driven-development`로 계획을 Task 단위 실행(태스크마다 구현 → spec 리뷰 → code quality 리뷰 게이트).
 - **검증** — `superpowers:verification-before-completion`(WAU는 실제 Spark 실행 결과로만 보고).
 - **의도적 미사용** — ultraplan(웹 Claude Code+GitHub 필요, 가치 중복) · Ouroboros(외부·무거움). 검토 후 과제 규모상 로컬 도구로 대체.
+- **대시보드(Phase 2)**: DuckDB(임베디드 파일) + pandas + Jinja2 정적 빌드, Chart.js(CDN), GitHub Actions → GitHub Pages. (Spark 외 서빙 레이어 — Python)
 
 ### 6.2. 역할 분담
 
@@ -183,6 +186,7 @@ sql/                              # create_external_table.sql, wau.sql
 results/                          # WAU 실측치(커밋됨)
 docs/specs·plans                  # 설계 스펙 / 구현 계획
 docs/runbook                      # 실행 절차(sample-e2e, full-backfill)
+dashboard/                        # Phase 2 서빙: export_duckdb.py(Gold→marts.duckdb), build.py+templates/(정적 index.html). 실행: docs/runbook/dashboard.md
 docs/troubleshooting              # 환경·빌드·실행 이슈 모음
 docs/conventions                  # 커밋·PR 컨벤션(SoT)
 ```
