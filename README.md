@@ -5,6 +5,7 @@
 - 언어/실행: **Scala + sbt + 로컬 Spark(local 모드)**, `spark-submit`로 thin jar 실행.
 - 카탈로그: 고전적 **Hive External Table + Spark 임베디드 Derby 메타스토어**(별도 서비스 불필요).
 - 설계 근거 전문: [설계 스펙](docs/superpowers/specs/2026-06-07-wau-activity-log-design.md) · [구현 계획](docs/superpowers/plans/2026-06-07-wau-activity-log.md)
+- 라이브 대시보드(확장 · GitHub Pages): <https://benidjor.github.io/ecommerce-user-activity-log/>
 
 ---
 
@@ -146,7 +147,7 @@ FROM activity GROUP BY 1 ORDER BY 1;
 - **구현** — `superpowers:subagent-driven-development`로 계획을 Task 단위 실행(태스크마다 구현 → spec 리뷰 → code quality 리뷰 게이트).
 - **검증** — `superpowers:verification-before-completion`(WAU는 실제 Spark 실행 결과로만 보고).
 - **의도적 미사용** — ultraplan(웹 Claude Code+GitHub 필요, 가치 중복) · Ouroboros(외부·무거움). 검토 후 과제 규모상 로컬 도구로 대체.
-- **대시보드(Phase 2)**: DuckDB(임베디드 파일) + pandas + Jinja2 정적 빌드, Chart.js(CDN), GitHub Actions → GitHub Pages. (Spark 외 서빙 레이어 — Python)
+- **대시보드(Phase 2)**: DuckDB(임베디드 파일) + pandas + Jinja2 정적 빌드, Chart.js(CDN), GitHub Actions → GitHub Pages. (Spark 외 서빙 레이어 — Python) 라이브: <https://benidjor.github.io/ecommerce-user-activity-log/> · 지표 정의·데이터 경계는 [런북 §6](docs/runbook/dashboard.md).
 
 ### 6.2. 역할 분담
 
