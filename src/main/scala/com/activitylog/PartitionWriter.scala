@@ -4,7 +4,7 @@ package com.activitylog
 //   Python의 os.path / pathlib.Path 역할을 하지만 분산 스토리지까지 포괄한다.
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.spark.sql.{DataFrame, SparkSession}
-import org.apache.spark.sql.functions.col
+import org.apache.spark.sql.functions.{col, count, lit, sum, when}
 
 // object: Scala의 싱글턴 객체(Python의 @staticmethod 묶음과 유사).
 //   인스턴스 없이 PartitionWriter.validate(...) 형태로 바로 호출한다.
@@ -14,26 +14,29 @@ object PartitionWriter {
   //   final = 상속 금지. case = toString·equals·copy 자동 생성. Pattern matching에도 활용.
   final case class ValidationResult(ok: Boolean, message: String)
 
-  /** 검증 게이트(최소 형태): 행수>0, 키 not null, 출력<=입력
+  /** 검증 게이트(파티션 단위): 행수>0, 키(user_id·event_time_utc) not null.
    *
-   *  파이프라인에서 파티션을 실제로 쓰기 전에 호출한다.
-   *  세 가지 조건 중 하나라도 어긋나면 ok=false를 즉시 반환(early return).
+   *  파티션을 실제로 쓰기 전에 호출한다. 두 단언을 **단일 집계 1회**로 계산해
+   *  풀스캔을 한 번만 한다(이전엔 count()를 2번 호출 → 풀스캔 2회).
+   *  "행 폭증 방지(output<=input)" 단언은 파티션 단위가 아니라 전역으로 의미가 있어
+   *  Main에서 1회(transformed<=raw)로 수행한다.
    */
-  def validate(df: DataFrame, inputCount: Long): ValidationResult = {
-    val cnt = df.count()
+  def validate(df: DataFrame): ValidationResult = {
+    // count(lit(1)): 전체 행수.
+    // sum(when(키 null, 1).otherwise(0)): null 키 행수.
+    // 둘을 한 번의 agg로 묶어 스캔 1회만 발생시킨다.
+    val row = df.agg(
+      count(lit(1)).as("cnt"),
+      sum(when(col("user_id").isNull || col("event_time_utc").isNull, 1L).otherwise(0L)).as("null_keys")
+    ).first()
 
-    // Scala에서 `return`은 메서드를 즉시 탈출(Python의 early return과 동일).
-    // 단, Scala 스타일 가이드에서는 일반적으로 지양하지만 여기서는
-    // 조건이 순서대로 실패를 가르는 검증 게이트이므로 명시적으로 사용한다.
+    val cnt = row.getLong(0)
+    // Scala의 early return: 조건이 순서대로 실패를 가르는 게이트라 명시적으로 사용.
     if (cnt <= 0L) return ValidationResult(false, "row count is 0")
 
-    // 키 컬럼(user_id, event_time_utc) 중 하나라도 null인 행을 집계
-    val nullKeys = df.filter(col("user_id").isNull || col("event_time_utc").isNull).count()
+    // 빈 그룹이면 sum이 null일 수 있어 isNullAt로 방어(여기선 cnt>0이라 항상 Long)
+    val nullKeys = if (row.isNullAt(1)) 0L else row.getLong(1)
     if (nullKeys > 0L) return ValidationResult(false, s"null key rows=$nullKeys")
-
-    // 출력 행 수가 입력보다 많으면 로직 오류(dedup 후 오히려 증가한 경우 등)
-    if (inputCount > 0L && cnt > inputCount)
-      return ValidationResult(false, s"output($cnt) > input($inputCount)")
 
     ValidationResult(true, s"ok rows=$cnt")
   }
@@ -79,5 +82,9 @@ object PartitionWriter {
     //   fs.create(path, overwrite=true): 빈 파일 생성 후 .close()로 즉시 닫는다.
     //   Python의 open(path, 'w').close()와 동일한 패턴.
     fs.create(new Path(finalDir, "_SUCCESS"), true).close()
+
+    // rename 후 비게 된 _staging 부모 디렉터리 정리(MSCK가 무시하지만 산출물을 깔끔하게).
+    val stagingRoot = new Path(s"$baseDir/_staging")
+    if (fs.exists(stagingRoot)) fs.delete(stagingRoot, true)
   }
 }

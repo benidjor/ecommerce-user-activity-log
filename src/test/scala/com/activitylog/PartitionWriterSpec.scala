@@ -14,12 +14,21 @@ class PartitionWriterSpec extends AnyFunSuite with SparkTestBase {
 
     // 빈 DataFrame: 행 수 0 → validate가 ok=false를 반환해야 한다
     val empty = Seq.empty[(Long, String)].toDF("user_id", "event_time_utc")
-    assert(!PartitionWriter.validate(empty, 0L).ok)
+    assert(!PartitionWriter.validate(empty).ok)
 
     // user_id=null 행: 키 not-null 검증에서 걸려야 한다
     val nullKey = Seq((null.asInstanceOf[java.lang.Long], "2019-10-01"))
       .toDF("user_id", "event_time_utc")
-    assert(!PartitionWriter.validate(nullKey, 1L).ok)
+    assert(!PartitionWriter.validate(nullKey).ok)
+  }
+
+  test("validate passes clean non-empty data") {
+    val ss = spark
+    import ss.implicits._
+    // 행수>0, 키 not null → ok=true (단일 집계 경로 검증)
+    val clean = Seq((1L, "2019-10-01 00:00:00"), (2L, "2019-10-01 00:01:00"))
+      .toDF("user_id", "event_time_utc")
+    assert(PartitionWriter.validate(clean).ok)
   }
 
   test("writePartition writes parquet, swaps atomically, creates _SUCCESS") {
