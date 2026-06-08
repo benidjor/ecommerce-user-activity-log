@@ -43,18 +43,11 @@ parquet(snappy)로 적재하고, Hive External Table로 노출한 뒤 WAU(user_i
 - **서빙**: 정적 HTML(GitHub Pages) + Streamlit Cloud, 둘 다 repo 커밋된 DuckDB 파일(패턴3) 읽기. Metabase/Postgres는 무료·항상ON 불충족이라 범위 밖.
 - **Gold 모델**: 경량 스타(`dim_date`+집계 fact) + count-distinct 비가산 지표 마트. **원자 fact는 Silver(약 9천만 행), Gold는 집계(수백 행)**. SQL은 `sql/gold/*.sql`(SoT) + 얇은 `GoldMarts` 러너(WAU의 .scala/.sql 이중화 반복 안 함).
 
-## AI 도구 조합 (근거: `wau-ai-tooling-strategy.html` §04, line 689 "최소 구성=superpowers+karpathy")
-- **방법론(필수)**: superpowers(`brainstorming`·`test-driven-development`·`verification-before-completion`) + karpathy-guidelines(Think·Simplicity·Surgical·Goal).
-- **설계/계획**: `superpowers:writing-plans` 로 스펙+계획서 로컬 산출(ultraplan/Ouroboros·Seed의 대체 — 결과물 동일).
-- **구현**: `superpowers:subagent-driven-development`(태스크별 리뷰 게이트). workflow codegen보다 설명 가능성 우선이라 이를 선택.
-- **검증**: 기본 `verification-before-completion`(WAU 실측). **Task 12에서 선택적으로 `workflow` verify**(두 WAU 적대적 교차검증, opt-in="ultracode"/"워크플로우로 WAU 교차검증"). 사용 시 README "사용 도구"에 workflow 추가.
-- **의도적 미사용**: ultraplan(웹 Claude Code+GitHub 필요, 가치 중복), Ouroboros(외부·무거움) → README엔 "검토 후 로컬·과제 규모상 제외"로 기술해 성숙도 어필.
+## AI 도구 조합
+- 사용·미사용 도구와 선택 근거(방법론·설계·구현·검증)는 `docs/ai-tooling.md` 참고. 최소 구성 = superpowers + karpathy-guidelines.
 
 ## 구현 4원칙 (karpathy-guidelines — 모든 코드 태스크에 적용)
-1. **Think Before Coding**: 가정은 명시하고 불확실하면 질문. 해석이 여럿이면 **조용히 고르지 말고** 제시. 더 단순한 길이 있으면 말할 것. (도구·설계 선택도 임의로 바꾸지 말고 알릴 것)
-2. **Simplicity First**: 요청을 푸는 최소 코드만. 투기적 추상화·미요청 설정·불가능 시나리오용 예외처리 금지. "시니어가 과하다 할까?" → 그러면 단순화.
-3. **Surgical Changes**: 건드릴 것만 수정. 인접 코드·주석·포맷 임의 개선/리팩터 금지. 기존 스타일 준수. 내 변경이 만든 orphan(미사용 import 등)만 정리. 모든 변경 라인은 요청에 직접 연결돼야.
-4. **Goal-Driven Execution**: 성공기준을 먼저 정의하고 검증될 때까지 루프. "검증"=테스트 통과/실제 실행 결과. (세션화=경계 케이스 TDD, WAU=실제 Spark 실행)
+- **Think Before Coding · Simplicity First · Surgical Changes · Goal-Driven Execution**. 상세 지침은 `andrej-karpathy-skills:karpathy-guidelines` 스킬을 호출해 따른다.
 
 ## 불변 규칙
 - **WAU 수치는 AI 주장 금지** — 반드시 실제 Spark 실행 결과로만 보고(verification-before-completion). 사용 쿼리 동봉.
