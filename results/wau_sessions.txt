@@ -1,0 +1,23 @@
+# WAU (session_id 기준) — 전체 Oct+Nov backfill 실측 (Task 12)
+# 실측일: 2026-06-08
+# 입력: data/2019-Oct.csv (5.3G) + data/2019-Nov.csv (8.4G), 적재 파티션 62개(2019-10-01~2019-12-01 KST)
+# 주 경계: ISO week(월요일 시작), KST event_date 기준 (설계 결정 3)
+# session_id: 원본 user_session 무시, 직접 생성한 결정적 id = user_id + "_" + unix(세션시작시각) (설계 결정 1)
+# 쿼리(sql/wau.sql 2번):
+#   SELECT date_trunc('week', to_date(event_date)) AS week_start,
+#          COUNT(DISTINCT session_id) AS wau_sessions
+#   FROM activity GROUP BY 1 ORDER BY 1;
+# 실행:
+#   spark-sql --driver-memory 8g --conf spark.sql.session.timeZone=UTC \
+#     --conf spark.sql.shuffle.partitions=200 -f sql/wau.sql
+#
+# week_start              wau_sessions
+2019-09-30 00:00:00	1570536
+2019-10-07 00:00:00	2154180
+2019-10-14 00:00:00	2257214
+2019-10-21 00:00:00	2153837
+2019-10-28 00:00:00	2115233
+2019-11-04 00:00:00	2751842
+2019-11-11 00:00:00	4754423
+2019-11-18 00:00:00	2876494
+2019-11-25 00:00:00	2376156
