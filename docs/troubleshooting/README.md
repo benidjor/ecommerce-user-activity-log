@@ -8,3 +8,4 @@
 | [spark-provided-classpath.md](spark-provided-classpath.md) | `Provided` Spark가 test·run classpath에서 빠지는 문제 |
 | [scala-spark-test-idioms.md](scala-spark-test-idioms.md) | `@transient var` implicits, `Dataset.as[T]` 인코더 표현 |
 | [hive-external-table.md](hive-external-table.md) | spark-shell 카탈로그, `MSCK REPAIR` 파티션 인식 |
+| [spark-sql-driver-memory-oom.md](spark-sql-driver-memory-oom.md) | 전체 데이터 WAU의 `COUNT(DISTINCT session_id)` OOM, `--driver-memory` |
