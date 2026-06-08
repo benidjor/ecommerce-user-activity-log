@@ -102,4 +102,16 @@ class GoldMartsSpec extends AnyFunSuite with SparkTestBase {
     assert(math.abs(w2._4.get - 0.0) < 1e-9)
     assert(math.abs(w2._5.get - (-0.5)) < 1e-9)
   }
+
+  test("mart_revenue: 구매 price 합 + AOV") {
+    fixtureActivity()
+    val ss = spark; import ss.implicits._
+    val rows = GoldMarts.build(spark, "sql/gold", "mart_revenue")
+      .as[(java.sql.Timestamp, Double, Long, Double)].collect().toList
+    // 구매는 1주차 user1 purchase price=10.0 1건뿐
+    assert(rows.length == 1)
+    val w1 = rows.head
+    // 부동소수는 형제 테스트와 동일하게 epsilon 비교(== 직접 비교 회피). 건수(_3)는 Long이라 ==.
+    assert(math.abs(w1._2 - 10.0) < 1e-9 && w1._3 == 1L && math.abs(w1._4 - 10.0) < 1e-9)
+  }
 }
