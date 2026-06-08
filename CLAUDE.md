@@ -22,7 +22,7 @@ parquet(snappy)로 적재하고, Hive External Table로 노출한 뒤 WAU(user_i
 
 ## 환경 (확인됨 2026-06-07)
 - Spark 4.1.2 / Scala 2.13.17 / sbt(brew) 설치 완료.
-- `sbt test`는 JDK 17, `spark-submit`은 brew JDK 21 — 둘 다 Spark 4 지원, JDK add-opens 필요(build.sbt/extraJavaOptions에 반영).
+- `sbt test`는 JDK 17, `spark-submit`은 brew JDK 21 — 둘 다 Spark 4 지원, JDK add-opens 필요(build.sbt/extraJavaOptions에 반영). date/timestamp 컬럼 collect·기록 시 `sun.util.calendar` open도 필요(Gold 마트에서 추가, `docs/troubleshooting/jdk-toolchain.md`).
 - 실행 모델: 개발은 샘플 우선(Day1 end-to-end), 전체(Oct+Nov) backfill은 최종 1회만.
 
 ## 핵심 설계 결정 (한 줄 요약 — 전체 근거는 설계 스펙 §7 결정 로그)
