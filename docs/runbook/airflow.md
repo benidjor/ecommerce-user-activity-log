@@ -102,6 +102,8 @@ airflow/.venv/bin/airflow dags backfill activity_daily -s 2019-10-09 -e 2019-10-
 캡처한 스크린샷(일별 catchup 그래프·(a) retry 복구·(b) 게이트 실패 후 복구·Discord 알림)을 README의 Airflow 절에 첨부한다.
 
 ## 트러블슈팅
+> 로컬 standalone·macOS 구동 함정(PATH·setproctitle fork SIGSEGV·`@daily` 단일일 backfill·clear≠재실행·Discord 403)의 상세 진단은 [docs/troubleshooting/airflow-local-macos.md](../troubleshooting/airflow-local-macos.md).
+
 - `MSCK REPAIR` 에러(table not found): §2 등록을 repo 루트에서 했는지 확인(메타스토어 공유).
 - gate 타임아웃: silver가 `_SUCCESS`를 못 썼다는 뜻 → silver 로그 확인(입력 폴더 존재 여부).
 - Discord 알림 안 옴: `airflow variables set discord_webhook_url <URL>` 또는 env `DISCORD_WEBHOOK_URL` 설정(미설정 시 조용히 skip).
