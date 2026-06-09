@@ -71,6 +71,9 @@ object Main {
       //   결과 DataFrame에는 event_date(KST 날짜), session_id 등이 포함됨.
       val transformed = ActivityPipeline.transform(raw)
 
+      // 요구사항 4 "추가 기간 처리": 새 기간이 들어오면 그 날짜만 incremental로 적재하고,
+      //   이후 sql/create_external_table.sql의 MSCK REPAIR로 새 파티션을 등록한다.
+      //   기존 파티션은 건드리지 않고 새 event_date만 덧붙임. session_id가 결정적이라 backfill과 동치(멱등).
       // incremental: 대상일만 write (lookback 행은 세션화 문맥용). backfill: 전체 event_date write.
       // (mode, runDate) match: Python의 match/case 또는 if-elif 체인과 유사한 패턴 매칭.
       val toWrite = (mode, runDate) match {
