@@ -11,6 +11,10 @@ _staging/
 **/_SUCCESS
 quarantine/
 
+# === Airflow 런타임(AIRFLOW_HOME) — 코드(airflow/dags·callbacks)만 추적, 런타임 산출물 무시 ===
+.airflow/
+airflow/.venv/
+
 # === sbt / Scala 빌드 ===
 target/
 project/target/
