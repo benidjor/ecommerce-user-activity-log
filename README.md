@@ -66,7 +66,7 @@
 #### (4) External Table 설계 + 추가 기간 처리 대응
 - **구현** 데이터 파일과 테이블 정의를 분리해, 새 기간은 새 `event_date=` 파티션만 덧붙이고 `MSCK REPAIR`로 등록 (테이블 재생성 불필요). 증분은 세션이 자정을 넘는 경우까지 잇기 위해 전날 (D-1)을 함께 읽어 경계를 계산하되 대상일 파티션만 기록
 - **코드** [`create_external_table.sql`](sql/create_external_table.sql) · [`Main`](src/main/scala/com/activitylog/Main.scala) (`--mode incremental`)
-- **검증** [`MSCK REPAIR` 등록](docs/runbook/full-backfill.md) · [backfill ≡ incremental 동치 실측](results/backfill_incremental_equiv.txt) (D=2019-10-03, 양방향 `EXCEPT ALL`=0)
+- **검증** [`MSCK REPAIR` 등록](docs/runbook/full-backfill.md) · [backfill·incremental이 같은 결과 내는지 실측](results/backfill_incremental_equiv.txt) (D=2019-10-03, 양방향 `EXCEPT ALL`=0)
 - **근거** [§5 결정 7 (테이블) · 8 (실행 모델)](#5-주요-설계-결정과-근거)
 
 #### (5) 배치 장애 복구 장치
@@ -90,25 +90,25 @@
 ## 2. 아키텍처 / 데이터 흐름
 
 ```
-raw CSV (UTC)                          Spark App (Scala)
-─────────────                          ─────────────────
-2019-Oct.csv                           ① DEDUP        자연키 (user_id, event_time, event_type, product_id) 1건 유지
-2019-Nov.csv    ───── read ─────▶      ② TZ           UTC → KST 1회 변환 → event_time_kst · event_date (파생)
-                                       ③ SESSIONIZE   Window (user_id, event_time_utc), gap ≥ 5분 → 새 세션
-                                                      session_id = user_id + "_" + unix (세션 시작 시각)
-                                       ④ WRITE        parquet + snappy → _staging/event_date=D/
-                                                        │  검증 게이트 통과 시에만
-                                                        ▼
-                                       ⑤ ATOMIC SWAP  rename _staging → event_date=D/
-                                       ⑥ MARK         _SUCCESS (맨 마지막)
-                                                        │
-                                                        ▼
-                                       Hive External Table  activity
-                                       (PARTITIONED BY event_date, STORED AS PARQUET)
-                                                        │  소비자는 _SUCCESS 있는 파티션만 읽음
-                                                        ▼
-                                       WAU 쿼리 (ISO week 월요일 시작, KST)
-                                       COUNT(DISTINCT user_id) / COUNT(DISTINCT session_id)
+raw CSV (UTC)          Spark App (Scala)
+─────────────          ─────────────────
+2019-Oct.csv           ① DEDUP        자연키 (user_id, event_time, event_type, product_id) 1건 유지
+2019-Nov.csv  ─────▶   ② TZ           UTC → KST 1회 변환 → event_time_kst · event_date (파생)
+               read    ③ SESSIONIZE   Window (user_id, event_time_utc), gap ≥ 5분 → 새 세션
+                                      session_id = user_id + "_" + unix (세션 시작 시각)
+                       ④ WRITE        parquet + snappy → _staging/event_date=D/
+                                        │  검증 게이트 통과 시에만
+                                        ▼
+                       ⑤ ATOMIC SWAP  rename _staging → event_date=D/
+                       ⑥ MARK         _SUCCESS (맨 마지막)
+                                        │
+                                        ▼
+                       Hive External Table  activity
+                       (PARTITIONED BY event_date, STORED AS PARQUET)
+                                        │  소비자는 _SUCCESS 있는 파티션만 읽음
+                                        ▼
+                       WAU 쿼리 (ISO week 월요일 시작, KST)
+                       COUNT(DISTINCT user_id) / COUNT(DISTINCT session_id)
 ```
 
 핵심 설계 포인트:
