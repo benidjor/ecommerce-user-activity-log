@@ -39,8 +39,14 @@ export AIRFLOW_HOME=$(pwd)/.airflow
 export AIRFLOW__CORE__DAGS_FOLDER=$(pwd)/airflow/dags
 export AIRFLOW__CORE__LOAD_EXAMPLES=False
 export ACTIVITY_HOME=$(pwd)
-airflow/.venv/bin/airflow standalone   # 웹+스케줄러+admin 자동. 콘솔에 admin 비번 출력 → http://localhost:8080
+export PATH="$(pwd)/airflow/.venv/bin:$PATH"        # standalone은 scheduler/webserver/triggerer를 'airflow'로 스폰 → venv가 PATH에 있어야 함
+export PYTHONPATH="$(pwd)/airflow/shims:$PYTHONPATH" # macOS setproctitle fork 크래시 회피(no-op 셰임으로 그림자 처리, 아래 설명)
+export no_proxy="*"                                 # macOS fork 안전성 표준 가드(이 크래시엔 단독으론 불충분, 함께 권장)
+export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES      # macOS fork 안전성 표준 가드(Obj-C 초기화 크래시)
+airflow standalone   # 웹+스케줄러+admin 자동. 콘솔에 admin 비번 출력(+ .airflow/standalone_admin_password.txt) → http://localhost:8080
 ```
+- `FileNotFoundError: [Errno 2] No such file or directory: 'airflow'`로 scheduler/webserver가 죽으면 → 위 `export PATH` 누락이다(전체 경로로만 실행 시 자식 프로세스가 `airflow`를 못 찾음). PATH 추가 후 재기동.
+- 자식(scheduler/webserver의 gunicorn 워커)이 `SIGSEGV`(`crashed on child side of fork`, 스택에 `setproctitle`·`CFBundleGetFunctionPointerForName`)로 죽고 macOS가 "Python 응용 프로그램이 예기치 않게 종료" 대화상자를 반복하면 → 신버전 macOS에서 `setproctitle`이 fork 자식에서 CoreFoundation(LaunchServices)을 호출하다 segfault하는 이슈다. **해결 = `export PYTHONPATH="$(pwd)/airflow/shims:$PYTHONPATH"`**(no-op 셰임 `airflow/shims/setproctitle.py`가 컴파일 패키지를 그림자 처리 — 제목 설정만 무력화, 기능 무영향). `no_proxy`/`OBJC_…`만으론 이 크래시는 안 잡힌다(검증함). backfill 등 단발 CLI에도 같은 env를 export해 두면 안전.
 - 데모는 소형 구간만 본다. 전체(62일)는 동일 DAG의 start/end 확장 + 더 긴 구동일 뿐이다.
 
 ## 4. 소형 대표 구간 백필(2019-10-01~10-07)
