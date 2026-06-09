@@ -10,14 +10,57 @@ _GREEN = 0x2ECC71
 _RED = 0xE74C3C
 _ORANGE = 0xF39C12
 
+# 상태별 상황 설명(한글) — 카드 본문에 무슨 일이 일어났는지 풀어서 요약 설명한다.
+#   {dag_id}{task_id}{ds}{tn}{total}{dur} 치환. RETRY/FAILED/SUCCESS 외 상태는 빈 문자열.
+_STATUS_NARRATIVE = {
+    "RETRY": (
+        "⚠️ **{dag_id}** 파이프라인의 **{task_id}** 단계가 `{ds}` 실행에서 "
+        "이번 시도(try {tn}/{total})에 실패했습니다.\n"
+        "일시적 오류로 보고 **자동 재시도**합니다 — 잠시 후 같은 작업을 다시 실행하며, "
+        "성공하면 이후 단계로 정상 이어집니다. 별도 조치는 필요 없습니다."
+    ),
+    "FAILED": (
+        "❌ **{dag_id}** 파이프라인의 **{task_id}** 단계가 `{ds}` 실행에서 "
+        "자동 재시도(try {tn}/{total})까지 모두 실패해 **최종 실패**했습니다.\n"
+        "이 단계가 막혀 이후 단계(repair_partition→…→build)는 실행되지 않았습니다. "
+        "아래 **Error**와 로그에서 원인을 확인하고, 입력·상태를 바로잡은 뒤 "
+        "해당 날짜를 **Clear(재처리)**하면 멱등하게 복구됩니다."
+    ),
+    "SUCCESS": (
+        "✅ **{dag_id}** 파이프라인의 **{task_id}** 단계가 `{ds}` 실행에서 "
+        "정상 완료되었습니다 (try {tn}/{total}, {dur})."
+    ),
+}
+
+# task별 단계 설명(한글) — 이 task가 파이프라인에서 무슨 일을 하는지.
+_STAGE_DESC = {
+    "silver": "Bronze 일별 데이터를 dedup·KST 변환·5분 갭 세션화하여 Silver(activity)로 적재하는 단계입니다.",
+    "repair_partition": "새로 쓴 파티션을 Hive 메타스토어에 인식시키는(MSCK REPAIR) 단계입니다.",
+    "gate": "`_SUCCESS` 마커로 Silver 적재 완료를 확인하는 검증 게이트입니다.",
+    "gold": "activity 테이블에서 WAU 등 Gold 마트를 재집계(멱등)하는 단계입니다.",
+    "export": "Gold 마트를 대시보드용 DuckDB 파일로 export하는 단계입니다.",
+    "build": "정적 대시보드(HTML)를 빌드하는 단계입니다.",
+}
+
 
 # build_embed: Discord 임베드(dict) 생성(네트워크·Airflow 상태 불필요 → 단위 테스트 가능).
 #   title을 log_url로 하이퍼링크 → 모든 알림에서 제목 클릭 시 Airflow 로그로 바로 이동.
+#   description에 상태 상황 설명 + 단계 설명을 한글로 풀어서 보여준다.
 #   status=FAILED일 때만 Error 필드(실제 예외 메시지)를 덧붙여 원인을 즉시 보여준다.
 def build_embed(emoji, status, color, dag_id, task_id, ds, try_number,
                 max_tries, duration, hostname, log_url, run_id, error=None):
     # duration(초)·host는 None일 수 있어 방어적으로 표시. try는 현재/최대(=retries+1)로.
     dur = f"{duration:.0f}s" if duration is not None else "-"
+    # 본문: 상황 설명(상태) + 이 단계가 하는 일(task) + 클릭 가능한 로그 링크.
+    narrative = _STATUS_NARRATIVE.get(status, "").format(
+        dag_id=dag_id, task_id=task_id, ds=ds,
+        tn=try_number, total=max_tries + 1, dur=dur)
+    stage = _STAGE_DESC.get(task_id, "파이프라인 단계입니다.")
+    parts = [narrative, f"ℹ️ **이 단계가 하는 일**: {stage}"]
+    if log_url:
+        # 본문에도 클릭 가능한 로그 링크를 노출(제목 하이퍼링크와 별개로 눈에 띄게).
+        parts.append(f"🔗 [Airflow 로그 열기]({log_url})")
+    description = "\n\n".join(p for p in parts if p)
     fields = [
         {"name": "DAG / Task", "value": f"{dag_id} / {task_id}", "inline": True},
         {"name": "Run (ds)", "value": ds, "inline": True},
@@ -30,6 +73,7 @@ def build_embed(emoji, status, color, dag_id, task_id, ds, try_number,
         fields.append({"name": "Error", "value": f"```{str(error)[:500]}```", "inline": False})
     embed = {
         "title": f"{emoji} {status} — {task_id}",
+        "description": description,
         "color": color,
         "fields": fields,
         "footer": {"text": f"run_id={run_id}"},

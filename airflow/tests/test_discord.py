@@ -65,6 +65,32 @@ def test_retry_embed_no_error_but_has_log():
     assert e["url"] == "http://x/log"
 
 
+def test_embed_description_explains_status_stage_and_log_link():
+    # 본문(description)에 상태 상황 설명 + 단계 설명 + 클릭 가능한 로그 링크가 들어가야 한다.
+    e = build_embed(
+        emoji="🚨", status="FAILED", color=0xE74C3C,
+        dag_id="activity_daily", task_id="silver", ds="2019-10-09",
+        try_number=2, max_tries=1, duration=3.0, hostname="host-1",
+        log_url="http://x/log", run_id="run1", error="boom",
+    )
+    desc = e["description"]
+    assert "최종 실패" in desc                       # 상태 상황 설명(FAILED)
+    assert "try 2/2" in desc                          # try/최대 치환
+    assert "Clear(재처리)" in desc                    # 복구 안내
+    assert "Silver(activity)로 적재" in desc          # silver 단계 설명
+    assert "[Airflow 로그 열기](http://x/log)" in desc  # 본문의 클릭 가능한 로그 링크
+    # RETRY: try 번호·단계 설명·로그 링크.
+    r = build_embed(
+        emoji="🔄", status="RETRY", color=0xF39C12,
+        dag_id="activity_daily", task_id="gold", ds="2019-10-09",
+        try_number=1, max_tries=1, duration=2.0, hostname="host-1",
+        log_url="http://x/log", run_id="run1",
+    )
+    assert "try 1/2" in r["description"]
+    assert "Gold 마트를 재집계" in r["description"]
+    assert "[Airflow 로그 열기](http://x/log)" in r["description"]
+
+
 def test_embed_handles_missing_duration_and_host():
     # duration·host가 None이어도 임베드가 안전하게 생성돼야 한다(방어적 표시).
     e = build_embed(
