@@ -1,4 +1,4 @@
-backfill ≡ incremental 동치 실측
+backfill·incremental 같은 결과 실측
 ================================
 실측일 2026-06-09. 실제 spark-submit·spark-sql 실행 결과 (AI 추정 아님).
 
@@ -62,4 +62,5 @@ i_except_b_multiset   0
 양방향 EXCEPT ALL = 0 + 행수 일치 → 두 파티션은 멀티셋으로 완전히 동일.
 session_id 를 포함한 전 컬럼이 일치하므로, 증분의 전날 lookback이 전역 세션화를
 정확히 재현함을 실측으로 확인. (한 날짜 D=2019-10-03의 실데이터 스폿 체크이며,
-일반 동치는 session_id 결정성 + 세션의 1일 비초과 성질에서 따라옴)
+일반적으로도 두 방식이 같은 결과를 내는 것은 session_id 결정성 + 세션이 하루를
+넘지 않는 성질에서 따라옴)

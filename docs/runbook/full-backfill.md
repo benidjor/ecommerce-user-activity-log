@@ -114,7 +114,7 @@ External Table라 데이터 파일과 테이블 정의가 분리돼 있어, 새 
 
 - `--mode incremental --run-date D` — 변환은 입력 전체에 적용하되, **기록은 `event_date == D` 파티션만** 함 (`Main.scala`의 `(mode, runDate) match`)
 - **전날 (D-1) lookback** — 입력에 D-1을 함께 넣어 D 첫 이벤트의 직전 갭(세션 경계)을 정확히 계산. D-1 행은 기록 대상에서 제외되므로 D 파티션만 멱등 overwrite.
-- `session_id`가 결정적이라 incremental 결과는 backfill과 동일 (멱등) — backfill ≡ incremental 동치. 실측 근거 (D=2019-10-03, 양방향 `EXCEPT ALL`=0): [results/backfill_incremental_equiv.txt](../../results/backfill_incremental_equiv.txt)
+- `session_id`가 결정적이라 incremental 결과는 backfill과 동일 (멱등). 두 방식이 같은 결과를 내는지 실측한 근거 (D=2019-10-03, 양방향 `EXCEPT ALL`=0): [results/backfill_incremental_equiv.txt](../../results/backfill_incremental_equiv.txt)
 
 절차:
 
