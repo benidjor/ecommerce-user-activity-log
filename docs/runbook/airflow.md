@@ -61,15 +61,17 @@ UI Graph/Grid에서 날짜별 run이 silver→…→build로 초록 채워지는
 
 > **Discord 알림 볼륨 주의**: on_success는 task 단위라 정상 백필 7일이면 6×7=42건이 발송된다. 알림 시연은 **장애 데모 구간에만** 웹훅을 설정하는 것을 권장한다(아래 (a)/(b) 직전 set, 직후 unset). 미설정 시 조용히 skip되어 DAG는 정상 동작한다.
 
+> **@daily 단일일 backfill 주의**: 논리날짜 D의 run은 데이터 구간 `[D, D+1)`을 담당하므로, backfill의 `-e`는 **D 다음 날**이어야 그 run이 포함된다(`-s D -e D`는 폭 0 구간이라 `No run dates`로 아무 run도 안 생긴다). 또 §4에서 이미 돌린 날짜를 다시 쓰려면 `tasks clear` 선행이 필요하니, 데모는 **아직 안 돌린 날짜**(예: 10-08, 10-09)를 쓰는 게 간단하다.
+
 ### (a) 자동 복구 — 일시적 오류 → 자동 retry → 성공
 ```bash
 # (선택) 알림을 보려면 이 구간에만 웹훅 설정
 airflow/.venv/bin/airflow variables set discord_webhook_url "<DISCORD_WEBHOOK_URL>"
 
-airflow/.venv/bin/airflow variables set demo_fail_date 2019-10-03   # 해당일 silver 첫 시도 강제 실패
-airflow/.venv/bin/airflow dags backfill activity_daily -s 2019-10-03 -e 2019-10-03
+airflow/.venv/bin/airflow variables set demo_fail_date 2019-10-08   # 해당일 silver 첫 시도 강제 실패
+airflow/.venv/bin/airflow dags backfill activity_daily -s 2019-10-08 -e 2019-10-09   # -e는 대상일+1
 ```
-- 2019-10-03 silver: try 1 실패(🔄 on_retry Discord) → 20초 뒤 try 2 성공(✅ on_success). UI에서 silver가 up_for_retry→success로 바뀌는 흐름 캡처.
+- 2019-10-08 silver: try 1 실패(🔄 on_retry Discord) → 20초 뒤 try 2 성공(✅ on_success). UI에서 silver가 up_for_retry→success로 바뀌는 흐름 캡처(노랑은 짧으니 silver `Logs`의 `[DEMO] injected transient fault ... (try 1)` + try 2 성공 로그가 확실한 증거).
 - 시연 후 토글 해제: `airflow/.venv/bin/airflow variables set demo_fail_date ""`
 
 ### (b) 수동 복구 — 데이터 품질 게이트 실패 → 알림 → 멱등 재처리
@@ -78,18 +80,18 @@ airflow/.venv/bin/airflow dags backfill activity_daily -s 2019-10-03 -e 2019-10-
 빈 입력은 silver가 `partitions=0`으로 정상 종료하고 `_SUCCESS`만 안 생겨 **gate 타임아웃**으로 실패한다. 아래는 silver를 직접 실패시키는 경로.)
 ```bash
 # 데모일 입력을 user_id null 행으로 교체 → silver 검증 게이트(null 키) 발동.
-#   event_time이 2019-10-03 16:00 UTC = KST 2019-10-04라 run-date 2019-10-04 필터에 잡힌다.
-mv data/daily/event_date=2019-10-04 /tmp/backup_1004
-mkdir -p data/daily/event_date=2019-10-04
-printf 'event_time,event_type,product_id,category_id,category_code,brand,price,user_id,user_session\n2019-10-03 16:00:00 UTC,view,1001,2001,c,b,10.0,,s1\n' \
-  > data/daily/event_date=2019-10-04/bad.csv
-airflow/.venv/bin/airflow dags backfill activity_daily -s 2019-10-04 -e 2019-10-04
+#   event_time이 2019-10-08 16:00 UTC = KST 2019-10-09라 run-date 2019-10-09 필터에 잡힌다.
+mv data/daily/event_date=2019-10-09 /tmp/backup_1009
+mkdir -p data/daily/event_date=2019-10-09
+printf 'event_time,event_type,product_id,category_id,category_code,brand,price,user_id,user_session\n2019-10-08 16:00:00 UTC,view,1001,2001,c,b,10.0,,s1\n' \
+  > data/daily/event_date=2019-10-09/bad.csv
+airflow/.venv/bin/airflow dags backfill activity_daily -s 2019-10-09 -e 2019-10-10   # -e는 대상일+1
 ```
-- silver가 `validation failed for 2019-10-04: null key rows=1`로 retry 1회 소진 후 최종 실패(🚨 on_failure Discord + 로그 링크). UI에서 빨강 확인·캡처.
+- silver가 `validation failed for 2019-10-09: null key rows=1`로 retry 1회 소진 후 최종 실패(🚨 on_failure Discord + 로그 링크). UI에서 빨강 확인·캡처.
 - 복구: 원본 입력 되돌리고 Clear(멱등 overwrite로 안전 재처리):
 ```bash
-rm -rf data/daily/event_date=2019-10-04 && mv /tmp/backup_1004 data/daily/event_date=2019-10-04
-airflow/.venv/bin/airflow tasks clear activity_daily -s 2019-10-04 -e 2019-10-04 -y
+rm -rf data/daily/event_date=2019-10-09 && mv /tmp/backup_1009 data/daily/event_date=2019-10-09
+airflow/.venv/bin/airflow tasks clear activity_daily -s 2019-10-09 -e 2019-10-10 -y
 ```
 - 재실행이 silver→…→build 초록(✅ on_success)으로 복구되는 모습 캡처.
 
