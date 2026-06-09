@@ -38,8 +38,12 @@ def _send(emoji, status, context):
         ds=context["ds"], try_number=ti.try_number, log_url=ti.log_url,
     )
     data = json.dumps({"content": msg}).encode("utf-8")
+    # User-Agent 명시: Discord(Cloudflare)는 기본 urllib UA(Python-urllib/x)를
+    #   403 Forbidden으로 막는다 → 식별 가능한 UA를 지정해야 웹훅 POST가 통과한다.
     req = urllib.request.Request(
-        url, data=data, headers={"Content-Type": "application/json"})
+        url, data=data,
+        headers={"Content-Type": "application/json",
+                 "User-Agent": "activity-daily-airflow/1.0"})
     urllib.request.urlopen(req, timeout=10)  # 실패하면 콜백이 예외 → 로그에 남음
 
 
