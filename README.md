@@ -212,12 +212,37 @@ FROM activity GROUP BY 1 ORDER BY 1;
 | 실행 순서 | DAG 의존(silver→…→build) + `max_active_runs=1` | — |
 | 자원 튜닝(OOM·스큐) | driver-memory·shuffle 파티션 조정(장치만, 데모 제외) | — |
 
-### 8.4. 장애 2모드 시연
+### 8.4. 시연 자료 (실제 standalone 구동 캡처)
 
-> 스크린샷(일별 catchup Grid · (a) retry 복구 · (b) 게이트 실패→복구 · Discord 알림)은 라이브 standalone 구동 후 이 절에 첨부한다([런북 §5·§6](docs/runbook/airflow.md)).
+`airflow standalone`으로 7일 catchup 백필과 장애 2모드를 실제 구동한 캡처다(절차: [런북](docs/runbook/airflow.md)).
 
-- **(a) 자동 복구** — `demo_fail_date` 토글이 해당일 silver **첫 시도만** 강제 실패(`exit 1`)시키고 20초 뒤 retry로 성공. up_for_retry→success 전환과 🔄/✅ Discord 알림으로 확인. 토글은 핵심 Scala 변환 코드 밖, silver bash 가드에만 둔다.
-- **(b) 수동 복구** — 입력에 `user_id` null 행을 두면 silver 검증 게이트가 `validation failed: null key rows`로 실패 → retry 소진 후 🚨 알림(로그 링크) → 원본 복구 + `tasks clear`로 **멱등 재처리** 성공.
+#### 8.4.1. 일별 catchup (정상 흐름)
+
+2019-10-01–07을 `@daily catchup`으로 백필 — `silver → repair_partition → gate → gold → export → build`가 날짜별로 채워진다.
+
+![7일 catchup Grid (6 task × 7일 success)](docs/assets/airflow/catchup-grid-7days.png)
+
+![DAG Graph — silver→repair→gate→gold→export→build 선형 체인](docs/assets/airflow/catchup-graph-7days.png)
+
+#### 8.4.2. (a) 자동 복구 — 일시적 오류 → 자동 retry → 성공
+
+`demo_fail_date` 토글이 해당일 silver **첫 시도만** 강제 실패(`exit 1`)시키고, 20초 뒤 retry로 성공한다. 토글은 핵심 Scala 변환 코드 밖, silver bash 가드에만 둔다.
+
+![silver up_for_retry→success — Airflow Grid·`[DEMO] injected transient fault … (try 1)` 로그](docs/assets/airflow/demo-a-airflow-grid-10-11.png)
+
+![Discord — 🔄 RETRY(try 1/2) → ✅ SUCCESS(try 2/2) 카드](docs/assets/airflow/demo-a-discord-retry-10-11.png)
+
+#### 8.4.3. (b) 수동 복구 — 데이터 품질 게이트 실패 → 알림 → 멱등 재처리
+
+입력에 `user_id` null 행을 두면 silver 검증 게이트(`PartitionWriter.validate`)가 실패 → retry 소진 후 🚨 알림. 입력을 복구하고 **backfill 재실행**으로 멱등 재처리하면 초록 복구된다. (`tasks clear`는 상태만 초기화 — backfill run은 스케줄러가 안 돌리므로 재실행이 필요.)
+
+![silver 검증 게이트 실패 — 빨강 (Airflow Grid)](docs/assets/airflow/demo-b-airflow-grid-10-09.png)
+
+![Discord — 🚨 FAILED 카드(Error·로그 링크)](docs/assets/airflow/demo-b-discord-failed-10-09.png)
+
+![복구 후 silver→build 초록 (멱등 재처리)](docs/assets/airflow/demo-b-airflow-grid-green-10-09.png)
+
+![Discord — ✅ SUCCESS 복구 카드](docs/assets/airflow/demo-b-discord-success-build-10-09.png)
 
 ### 8.5. Airflow 한계 (데모 vs 프로덕션)
 
