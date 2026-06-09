@@ -88,12 +88,15 @@ printf 'event_time,event_type,product_id,category_id,category_code,brand,price,u
 airflow/.venv/bin/airflow dags backfill activity_daily -s 2019-10-09 -e 2019-10-10   # -e는 대상일+1
 ```
 - silver가 `validation failed for 2019-10-09: null key rows=1`로 retry 1회 소진 후 최종 실패(🚨 on_failure Discord + 로그 링크). UI에서 빨강 확인·캡처.
-- 복구: 원본 입력 되돌리고 Clear(멱등 overwrite로 안전 재처리):
+- 복구: 원본 입력을 되돌린 뒤 **backfill을 다시 실행**해 멱등 재처리한다. (`tasks clear`는 상태만
+  초기화할 뿐 실행하지 않는다 — backfill run은 스케줄러가 관리하지 않고 생성한 backfill job도 종료됐으므로,
+  clear만으로는 아무도 다시 돌리지 않는다. 재실행은 backfill을 다시 돌려야 한다.)
 ```bash
 rm -rf data/daily/event_date=2019-10-09 && mv /tmp/backup_1009 data/daily/event_date=2019-10-09
-airflow/.venv/bin/airflow tasks clear activity_daily -s 2019-10-09 -e 2019-10-10 -y
+airflow/.venv/bin/airflow tasks clear activity_daily -s 2019-10-09 -e 2019-10-10 -y   # 상태 초기화(선택)
+airflow/.venv/bin/airflow dags backfill activity_daily -s 2019-10-09 -e 2019-10-10    # 실제 재실행(필수)
 ```
-- 재실행이 silver→…→build 초록(✅ on_success)으로 복구되는 모습 캡처.
+- 재실행이 silver→…→build 초록(✅ on_success)으로 복구되는 모습 캡처. (backfill이 "할 일 없음"으로 건너뛰면 `--rerun-failed-tasks -y`를 붙인다.)
 
 ## 6. 시연 자료
 캡처한 스크린샷(일별 catchup 그래프·(a) retry 복구·(b) 게이트 실패 후 복구·Discord 알림)을 README의 Airflow 절에 첨부한다.
@@ -103,3 +106,5 @@ airflow/.venv/bin/airflow tasks clear activity_daily -s 2019-10-09 -e 2019-10-10
 - gate 타임아웃: silver가 `_SUCCESS`를 못 썼다는 뜻 → silver 로그 확인(입력 폴더 존재 여부).
 - Discord 알림 안 옴: `airflow variables set discord_webhook_url <URL>` 또는 env `DISCORD_WEBHOOK_URL` 설정(미설정 시 조용히 skip).
 - backfill이 무겁다(각 일별 run이 Main + GoldMarts 전체 재계산): 데모는 7일로 제한, 전체 62일은 시간 확보 후 동일 명령의 `-e`만 확장.
+- `tasks clear` 했는데 Grid가 복구(재실행)되지 않음: backfill run은 스케줄러가 안 돌린다. clear는 상태 초기화만 하므로, 복구하려면 `airflow dags backfill ...`을 다시 실행해야 한다(필요 시 `--rerun-failed-tasks -y`).
+- 🚨 카드 Error가 `Bash command failed ... exit code 1`로만 보임: silver가 BashOperator라 콜백 예외가 bash 레벨이다. 실제 원인(예: `validation failed: null key rows=1`)은 카드의 `🔗 Airflow 로그 열기`(또는 silver Logs)에서 확인.
