@@ -200,6 +200,7 @@ FROM activity GROUP BY 1 ORDER BY 1;
 
 - DailySplitter는 **Airflow 일별 run이 "자기 날짜 폴더만" 읽게** 하려는 입력 전제다. 수동 backfill은 월 CSV를 직접 읽으므로 DailySplitter가 필요 없다.
 - Silver/Gold 산출물은 수동 경로와 **동일 테이블**(`output/activity`·`output/gold`)이다 — Airflow는 결과를 대체하는 게 아니라 같은 결과를 자동 생산한다(멱등이라 동치, 수치는 코어 단계에서 실측).
+- 더 자세한 설명(왜 DailySplitter인가·Airflow가 기존을 대체하나·도식·비교표): [docs/notes/single-pipeline-two-drivers.md](docs/notes/single-pipeline-two-drivers.md).
 
 ### 8.3. 복구 장치 ↔ 장애 매핑
 
