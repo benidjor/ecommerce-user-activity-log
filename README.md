@@ -43,6 +43,7 @@ raw CSV(UTC)  ──read──▶  Spark App (Scala)
 
 - 샘플(Oct 20만 행) end-to-end: [docs/runbook/sample-e2e.md](docs/runbook/sample-e2e.md)
 - 전체(Oct+Nov) backfill + WAU 실측: [docs/runbook/full-backfill.md](docs/runbook/full-backfill.md)
+- (확장) Airflow 일별 오케스트레이션 + 장애 2모드 시연: [docs/runbook/airflow.md](docs/runbook/airflow.md) (§8)
 
 ```bash
 # 0. 테스트 (14건/7 suites 통과 — 세션화 경계 케이스 중심)
@@ -114,7 +115,7 @@ FROM activity GROUP BY 1 ORDER BY 1;
 - **세션화 로직 표현력** — 윈도우 함수(`lag`/`sum over`)·UDF 등 핵심 로직을 타입 안전하게 표현한다.
 - **대안 비교** — Java도 가능하나 Spark 관용 표현·간결성에서 Scala 우위. PySpark는 과제 요구상 제외.
 
-> **대시보드 레이어는 Python(경계 명시).** 파이프라인 본체·`GoldMarts` 등 **Spark Application은 Scala**로 유지한다. Phase 2의 마트 export(`dashboard/export_duckdb.py`)·정적 빌드(`dashboard/build.py`)·CI는 Spark 외 서빙/오케스트레이션이라 Python(duckdb/pandas/jinja2)을 쓴다. 제출용 WAU 정본은 여전히 Hive `activity`의 `sql/wau.sql`이며, 대시보드의 `marts.duckdb`는 Gold 서빙 사본이다(Hive 대체 아님).
+> **대시보드 레이어는 Python(경계 명시).** 파이프라인 본체·`GoldMarts` 등 **Spark Application은 Scala**로 유지한다. Phase 2의 마트 export(`dashboard/export_duckdb.py`)·정적 빌드(`dashboard/build.py`)·CI는 Spark 외 서빙/오케스트레이션이라 Python(duckdb/pandas/jinja2)을 쓴다. 제출용 WAU 정본은 여전히 Hive `activity`의 `sql/wau.sql`이며, 대시보드의 `marts.duckdb`는 Gold 서빙 사본이다(Hive 대체 아님). `DailySplitter`(Bronze 분할)도 Spark Application이라 Scala이고, Airflow DAG·Discord 콜백은 오케스트레이션이라 Python이다 — 전체 언어 경계는 §8.1.
 
 ---
 
@@ -173,21 +174,72 @@ FROM activity GROUP BY 1 ORDER BY 1;
 | `ActivityPipeline.readAndTransform` | 미사용(Main은 raw 재사용 위해 `transform(raw)` 직접 호출) | 정리 후보 |
 | 입력 견고성 | PERMISSIVE 파싱 + 손상 행 카운트 | 풀 dead-letter quarantine + replay |
 | 세션화 | backfill 전역 / incremental 전날 lookback | 초장시간 세션 대비 Stateful Sessionizer(state store) |
-| 오케스트레이션 | (선택) Airflow BashOperator + spark-submit, `catchup=True`=backfill | SparkSubmitOperator |
+| 오케스트레이션 | (확장·구현) Airflow `activity_daily` DAG, BashOperator + spark-submit, `catchup=True`=backfill, 장애 2모드 시연(§8) | LocalExecutor+Postgres→Celery/K8s, SparkSubmitOperator |
 
 ---
 
-## 8. 프로젝트 구조 / 문서 맵
+## 8. Airflow 오케스트레이션 & 장애 복구 (확장)
+
+코어(WAU + Hive External Table) 완성·검증 후, **같은 파이프라인**을 Airflow DAG `activity_daily`로 일별 오케스트레이션하고 장애 복구를 시연한다. 변환 코드를 새로 만들지 않고(별도 파이프라인 아님) 동일한 `spark-submit`/`python` 명령을 BashOperator로 엮는 **상위 자동화 레이어**다. 실행 절차: [docs/runbook/airflow.md](docs/runbook/airflow.md).
+
+### 8.1. 언어 경계 (변환은 Scala, 엮기·알림·서빙은 Python)
+
+- **Scala(Spark Application)** — 파이프라인 본체(`Main`)·`GoldMarts`·**`DailySplitter`**(월 CSV → KST 일별 Bronze 분할, Phase 0).
+- **Python(Spark 외 레이어)** — Airflow DAG·Discord 콜백(`airflow/`), 대시보드 export/build(`dashboard/`). 콜백은 stdlib `urllib` 웹훅이라 추가 의존성 0.
+- 즉 **데이터를 변환하는 코드는 전부 Scala**, 그것을 **엮고·알리고·서빙하는 코드만 Python**이다.
+
+### 8.2. 흐름 (단일 파이프라인, 두 실행 방식)
+
+```
+월 CSV ─DailySplitter(Scala)─▶ data/daily/event_date=D/   (Bronze 일별 랜딩, Phase 0)
+        │  @daily catchup (2019-10-01 ~ 2019-12-01 KST, SequentialExecutor, max_active_runs=1)
+        ▼
+  silver ─▶ repair_partition(MSCK) ─▶ gate(FileSensor _SUCCESS) ─▶ gold ─▶ export ─▶ build
+  (Main incremental, --run-date {{ds}} + 전날 lookback)         (GoldMarts 전체 재계산·멱등)
+```
+
+- DailySplitter는 **Airflow 일별 run이 "자기 날짜 폴더만" 읽게** 하려는 입력 전제다. 수동 backfill은 월 CSV를 직접 읽으므로 DailySplitter가 필요 없다.
+- Silver/Gold 산출물은 수동 경로와 **동일 테이블**(`output/activity`·`output/gold`)이다 — Airflow는 결과를 대체하는 게 아니라 같은 결과를 자동 생산한다(멱등이라 동치, 수치는 코어 단계에서 실측).
+
+### 8.3. 복구 장치 ↔ 장애 매핑
+
+| 장애 유형 | 복구 장치 | 데모 |
+|---|---|---|
+| 일시적 오류(자원·네트워크 순간 부족) | 자동 retry(`retries=1`, 20s) + `on_retry` 알림 | (a) |
+| 데이터 품질(키 null 등) | 검증 게이트(`PartitionWriter.validate`: 행수>0·`user_id`/`event_time_utc` not null) → fail-fast | (b) |
+| 부분 쓰기·중복 | staging→rename 원자 교체 + 일 단위 멱등 overwrite | (b) 복구 |
+| 산출 지연·누락 | 파티션별 `_SUCCESS` 마커 + FileSensor gate | gate |
+| 실행 순서 | DAG 의존(silver→…→build) + `max_active_runs=1` | — |
+| 자원 튜닝(OOM·스큐) | driver-memory·shuffle 파티션 조정(장치만, 데모 제외) | — |
+
+### 8.4. 장애 2모드 시연
+
+> 스크린샷(일별 catchup Grid · (a) retry 복구 · (b) 게이트 실패→복구 · Discord 알림)은 라이브 standalone 구동 후 이 절에 첨부한다([런북 §5·§6](docs/runbook/airflow.md)).
+
+- **(a) 자동 복구** — `demo_fail_date` 토글이 해당일 silver **첫 시도만** 강제 실패(`exit 1`)시키고 20초 뒤 retry로 성공. up_for_retry→success 전환과 🔄/✅ Discord 알림으로 확인. 토글은 핵심 Scala 변환 코드 밖, silver bash 가드에만 둔다.
+- **(b) 수동 복구** — 입력에 `user_id` null 행을 두면 silver 검증 게이트가 `validation failed: null key rows`로 실패 → retry 소진 후 🚨 알림(로그 링크) → 원본 복구 + `tasks clear`로 **멱등 재처리** 성공.
+
+### 8.5. Airflow 한계 (데모 vs 프로덕션)
+
+- 데모는 **SQLite + SequentialExecutor**(공식 개발용, 단일 프로세스 순차) — 동시성·대용량엔 부적합.
+- 프로덕션은 **LocalExecutor + PostgreSQL** → 부하 시 **Celery/Kubernetes Executor**로 확장.
+- `MSCK REPAIR`는 전체 파티션 스캔이라 파티션이 많아지면 `ALTER TABLE … ADD PARTITION`이 가볍다.
+- Airflow UI는 로컬 standalone 구동 중에만 보이므로, 시연 자료(스크린샷)를 README의 상시 열람 매체로 둔다.
+
+---
+
+## 9. 프로젝트 구조 / 문서 맵
 
 ```
 src/main/scala/com/activitylog/   # 파이프라인: Schema, Dedup, TimeUtils, Sessionizer,
                                   #   ActivityPipeline, PartitionWriter, WauQueries, Main
 src/test/scala/com/activitylog/   # 테스트(세션화 경계 케이스 중심)
-sql/                              # create_external_table.sql, wau.sql
+sql/                              # create_external_table.sql, wau.sql, gold/*.sql
 results/                          # WAU 실측치(커밋됨)
 docs/specs·plans                  # 설계 스펙 / 구현 계획
-docs/runbook                      # 실행 절차(sample-e2e, full-backfill)
+docs/runbook                      # 실행 절차(sample-e2e, full-backfill, dashboard, airflow)
 dashboard/                        # Phase 2 서빙: export_duckdb.py(Gold→marts.duckdb), build.py+templates/(정적 index.html). 실행: docs/runbook/dashboard.md
+airflow/                          # (확장) 오케스트레이션(Python): dags/activity_daily.py, callbacks/discord.py, tests/. 런타임(.airflow·.venv)은 gitignore
 docs/troubleshooting              # 환경·빌드·실행 이슈 모음
 docs/conventions                  # 커밋·PR 컨벤션(SoT)
 ```
