@@ -43,3 +43,9 @@ dashboard/.venv/
 # === 로그 ===
 *.log
 logs/
+
+# === 로컬 분석·전략 메모(repo 비포함) ===
+superpowers-overengineering-and-layers.html
+superpowers-vs-harness.html
+wau-ai-tooling-strategy.html
+wau-plan-revision-logic-flow.html

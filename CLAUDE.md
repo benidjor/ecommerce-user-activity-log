@@ -3,7 +3,7 @@
 ## 무엇을 만드는가
 2019-Oct/Nov 이커머스 이벤트 CSV를 dedup·KST변환·5분갭 세션화하여 KST 일별 파티션
 parquet(snappy)로 적재하고, Hive External Table로 노출한 뒤 WAU(user_id/session_id) 2종을
-실측한다. (백패커/아이디어스 DE 사전 과제)
+실측한다.
 
 ## 핵심 문서 (먼저 읽을 것)
 - 설계 스펙(결정 로그 9개 + 핵심 로직 명세): `docs/superpowers/specs/2026-06-07-wau-activity-log-design.md`
@@ -34,12 +34,12 @@ parquet(snappy)로 적재하고, Hive External Table로 노출한 뒤 WAU(user_i
 6. **장애복구**: staging+rename 원자 교체 + 검증게이트(최소 단언) + 파티션별 `_SUCCESS` + 멱등 overwrite(단위=하루). retry/알람은 Airflow 콜백+Discord 웹훅. **checkpoint 미사용**(스트림 전용). 커스텀 재실행 버튼 대신 **Airflow 네이티브 Retry**.
 7. **테이블**: 고전적 Hive External Table + Spark **임베디드 Derby metastore**(별도 서비스 X). Iceberg/Delta는 README "프로덕션 확장"으로만.
 8. **언어**: Scala + sbt + 로컬 Spark(local 모드). spark-submit로 thin jar 실행.
-9. **오케스트레이션**: Airflow는 **선택(어필용)** — 본체 완성·검증 후 BashOperator+spark-submit, `catchup=True`가 backfill 겸함.
+9. **오케스트레이션**: Airflow는 **선택 구성** — 본체 완성·검증 후 BashOperator+spark-submit, `catchup=True`가 backfill 겸함.
 
 ## 확장: 메달리온 BI 대시보드 (코어 완료 후 진행)
-원과제 코어(WAU+Hive External Table, Task 1~12) 완료 후, Gold 마트·Airflow 일별 오케스트레이션·BI 대시보드·Discord 알람을 얹는다(스펙 2026-06-08, Phase 0~4).
-- **진행 상태(2026-06-09)**: Phase 1(Gold 마트)·Phase 2(Mart Export+정적 대시보드) 완료·배포 — 라이브 <https://benidjor.github.io/ecommerce-user-activity-log/>. 지표 정의·데이터 경계는 `docs/runbook/dashboard.md` §6. **Phase 3(Streamlit)은 보류**(세 목적—데이터 유동성·실무 어필·장애/복구 가시화—은 Airflow UI+Discord가 충족, 정적과 같은 스냅샷 읽어 중복 → 선택적 폴리시로 남김; 스펙 §12.0). **Phase 0(DailySplitter, PR #32)·Phase 4(Airflow DAG+Discord, PR #33) 완료·머지**(2026-06-09). 핵심 결정: BashOperator+spark-submit, `airflow standalone`(SQLite+SequentialExecutor), 장애 2모드 시연(자동 retry 복구·검증 게이트 실패 후 멱등 복구), @daily catchup(2019-10-01~12-01 KST, 데모 10-01~10-07). 라이브 실구동 시연(7일 catchup·장애 2모드)·캡처 README §8, Discord 임베드 카드. 구동 절차 `docs/runbook/airflow.md`, 로컬 구동 함정(macOS setproctitle fork·standalone PATH·Discord 403·@daily backfill·clear≠재실행) `docs/troubleshooting/airflow-local-macos.md`, 개념(단일 파이프라인·두 driver) `docs/notes/single-pipeline-two-drivers.md`. WAU 재실행으로 §3 수치 재확인(backfill≡incremental 동치 실측). 코어 원과제(요구 1~8 + AI 가이드) 전부 충족.
-- **요구사항 가드레일(불변)**: "Hive External Table" 요구 = **Silver `activity`**. DuckDB는 Gold 서빙 사본(Hive 대체 아님). 제출용 WAU는 Hive `activity`(`sql/wau.sql`) 정본. **Spark Application은 전부 Scala**(파이프라인·DailySplitter·GoldMarts); 대시보드(정적/Streamlit)·Airflow·DuckDB export는 Spark 외라 **Python 허용**(README에 경계 명시).
+코어(WAU+Hive External Table, Task 1~12) 완료 후, Gold 마트·Airflow 일별 오케스트레이션·BI 대시보드·Discord 알람을 얹는다(스펙 2026-06-08, Phase 0~4).
+- **진행 상태(2026-06-09)**: Phase 1(Gold 마트)·Phase 2(Mart Export+정적 대시보드) 완료·배포 — 라이브 <https://benidjor.github.io/ecommerce-user-activity-log/>. 지표 정의·데이터 경계는 `docs/runbook/dashboard.md` §6. **Phase 3(Streamlit)은 보류**(세 목적—데이터 유동성·실무 활용성·장애/복구 가시화—은 Airflow UI+Discord가 충족, 정적과 같은 스냅샷 읽어 중복 → 선택적 폴리시로 남김; 스펙 §12.0). **Phase 0(DailySplitter, PR #32)·Phase 4(Airflow DAG+Discord, PR #33) 완료·머지**(2026-06-09). 핵심 결정: BashOperator+spark-submit, `airflow standalone`(SQLite+SequentialExecutor), 장애 2모드 시연(자동 retry 복구·검증 게이트 실패 후 멱등 복구), @daily catchup(2019-10-01~12-01 KST, 데모 10-01~10-07). 라이브 실구동 시연(7일 catchup·장애 2모드)·캡처 README §8, Discord 임베드 카드. 구동 절차 `docs/runbook/airflow.md`, 로컬 구동 함정(macOS setproctitle fork·standalone PATH·Discord 403·@daily backfill·clear≠재실행) `docs/troubleshooting/airflow-local-macos.md`, 개념(단일 파이프라인·두 driver) `docs/notes/single-pipeline-two-drivers.md`. WAU 재실행으로 §3 수치 재확인(backfill≡incremental 동치 실측). 코어 요구사항(요구 1~8 + AI 가이드) 전부 충족.
+- **요구사항 가드레일(불변)**: "Hive External Table" 요구 = **Silver `activity`**. DuckDB는 Gold 서빙 사본(Hive 대체 아님). 정본 WAU는 Hive `activity`(`sql/wau.sql`). **Spark Application은 전부 Scala**(파이프라인·DailySplitter·GoldMarts); 대시보드(정적/Streamlit)·Airflow·DuckDB export는 Spark 외라 **Python 허용**(README에 경계 명시).
 - **서빙**: 정적 HTML(GitHub Pages) + Streamlit Cloud, 둘 다 repo 커밋된 DuckDB 파일(패턴3) 읽기. Metabase/Postgres는 무료·항상ON 불충족이라 범위 밖.
 - **Gold 모델**: 경량 스타(`dim_date`+집계 fact) + count-distinct 비가산 지표 마트. **원자 fact는 Silver(약 9천만 행), Gold는 집계(수백 행)**. SQL은 `sql/gold/*.sql`(SoT) + 얇은 `GoldMarts` 러너(WAU의 .scala/.sql 이중화 반복 안 함).
 
@@ -49,8 +49,13 @@ parquet(snappy)로 적재하고, Hive External Table로 노출한 뒤 WAU(user_i
 ## 구현 4원칙 (karpathy-guidelines — 모든 코드 태스크에 적용)
 - **Think Before Coding · Simplicity First · Surgical Changes · Goal-Driven Execution**. 상세 지침은 `andrej-karpathy-skills:karpathy-guidelines` 스킬을 호출해 따른다.
 
+## README/문서 작성 방침
+- README는 **이 repo의 1차 소개 매체** — 외부 독자가 요구사항 충족을 README로 파악. 요구사항별 "접근→해결→근거→코드 위치→검증"을 **§1.3 충족 허브에 응집**(5박자 매트릭스), 깊은 근거는 §5 결정 로그 링크로 위임(2026-06-09 재정비 완료; 메모리 `project-readme-requirement-coverage`).
+- **문서 문체 규칙**(명사형·자연스러운 표현, 화살표/괄호 앞 공백, 괄호로 끝나면 마침표 생략, 도식은 mermaid 대신 코드블럭, `명사+임`의 `임` 제거, 표 괄호 공백)은 메모리 `feedback-natural-nominalization` + `docs/conventions §2.2` 준수.
+- **공개 부적절 암시 키워드 금지**(README·문서·커밋; 상세 목록은 conventions §2.3). 공개 repo이므로 `CLAUDE.md`도 같은 기준으로 중립 표현 유지(2026-06-09 정리 완료).
+
 ## 불변 규칙
 - **WAU 수치는 AI 주장 금지** — 반드시 실제 Spark 실행 결과로만 보고(verification-before-completion). 사용 쿼리 동봉.
 - **데이터 커밋 금지**: `data/*.csv`는 `.gitignore` 적용됨.
-- 인터뷰에서 라인 단위 설명이 가능해야 하므로 **과한 추상화 금지**(최소·또렷한 구조).
+- 코드를 라인 단위로 설명할 수 있어야 하므로 **과한 추상화 금지**(최소·또렷한 구조).
 - 항상 한국어 존댓말.
