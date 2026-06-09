@@ -15,6 +15,10 @@ quarantine/
 .airflow/
 airflow/.venv/
 
+# === Python 바이트코드 캐시(pytest·import 생성) ===
+__pycache__/
+*.pyc
+
 # === sbt / Scala 빌드 ===
 target/
 project/target/
